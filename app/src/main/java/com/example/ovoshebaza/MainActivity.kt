@@ -87,6 +87,10 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import com.example.ovoshebaza.ui.theme.VeggieTheme
 
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.Brush
+
+import androidx.compose.material.icons.filled.SupportAgent
 
 
 // Главная Activity — точка входа в приложение
@@ -122,6 +126,13 @@ fun VeggieShopApp() {
     var showAdminPinDialog by remember { mutableStateOf(false) }
     var adminPin by remember { mutableStateOf("") }
     var adminPinError by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    var showSupportDialog by remember { mutableStateOf(false) }
+    var supportQuestion by remember { mutableStateOf("") }
+    var supportPhone by remember { mutableStateOf("") }
+    var supportError by remember { mutableStateOf<String?>(null) }
+
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -231,27 +242,134 @@ fun VeggieShopApp() {
             }
         }
     ) { innerPadding ->
-        AppNavHost(
-            navController = navController,
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize(),
-            products = products,
-            cartItems = cartItems,
-            onAddToCart = { product, quantity ->
-                shopViewModel.addToCart(product, quantity)
+        Box(modifier = Modifier.fillMaxSize()) {
+            AppNavHost(
+                navController = navController,
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize(),
+                products = products,
+                cartItems = cartItems,
+                onAddToCart = { product, quantity ->
+                    shopViewModel.addToCart(product, quantity)
+                },
+                onUpdateQuantity = { productId, quantity ->
+                    shopViewModel.updateCartItemQuantity(productId, quantity)
+                },
+                onRemoveFromCart = { productId ->
+                    shopViewModel.removeFromCart(productId)
+                },
+                onUpdateProduct = { updated ->
+                    shopViewModel.updateProduct(updated)
+                },
+                onAddProduct = { newProduct ->
+                    shopViewModel.addProduct(newProduct)
+                }
+            )
+
+            SmallFloatingActionButton(
+                onClick = {
+                    showSupportDialog = true
+                    supportQuestion = ""
+                    supportPhone = ""
+                    supportError = null
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = 20.dp,
+                        bottom = innerPadding.calculateBottomPadding() + 16.dp
+                    )
+
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SupportAgent,
+                    contentDescription = "Связь с поддержкой"
+                )
+            }
+        }
+    }
+
+    if (showSupportDialog) {
+        AlertDialog(
+            onDismissRequest = { showSupportDialog = false },
+            title = { Text("Связь с поддержкой") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = supportQuestion,
+                        onValueChange = { supportQuestion = it },
+                        label = { Text("Ваш вопрос") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 120.dp),
+                        maxLines = 4
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = supportPhone,
+                        onValueChange = { supportPhone = it },
+                        label = { Text("Ваш номер телефона") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                    )
+                    if (supportError != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = supportError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             },
-            onUpdateQuantity = { productId, quantity ->
-                shopViewModel.updateCartItemQuantity(productId, quantity)
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (supportQuestion.isBlank()) {
+                            supportError = "Введите вопрос"
+                            return@TextButton
+                        }
+                        if (supportPhone.isBlank()) {
+                            supportError = "Введите номер телефона"
+                            return@TextButton
+                        }
+                        supportError = null
+                        val supportPayload = buildSupportMap(
+                            question = supportQuestion,
+                            phone = supportPhone
+                        )
+                        sendOrderViaFirebaseTelegram(
+                            context = context,
+                            order = supportPayload,
+                            onSuccess = {
+                                Toast.makeText(
+                                    context,
+                                    "Вопрос отправлен в поддержку ✅",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                showSupportDialog = false
+                            },
+                            onError = { err ->
+                                Toast.makeText(
+                                    context,
+                                    "Ошибка отправки: $err",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
+                    }
+                ) {
+                    Text("Отправить")
+                }
             },
-            onRemoveFromCart = { productId ->
-                shopViewModel.removeFromCart(productId)
-            },
-            onUpdateProduct = { updated ->
-                shopViewModel.updateProduct(updated)
-            },
-            onAddProduct = { newProduct ->
-                shopViewModel.addProduct(newProduct)
+            dismissButton = {
+                TextButton(onClick = { showSupportDialog = false }) {
+                    Text("Отмена")
+                }
             }
         )
     }
@@ -538,10 +656,7 @@ fun CatalogScreen(
                     selectedFilter = CatalogFilter.All
                     scope.launch { gridState.animateScrollToItem(2) }
                 },
-                onSelectPopular = {
-                    selectedFilter = CatalogFilter.Popular
-                    scope.launch { gridState.animateScrollToItem(2) }
-                },
+
                 onSelectCategory = { cat ->
                     selectedFilter = CatalogFilter.Category(cat)
                     scope.launch { gridState.animateScrollToItem(2) }
@@ -682,7 +797,6 @@ fun CategoryChipsRow(
     categories: List<ProductCategory>,
     selectedFilter: CatalogFilter,
     onSelectAll: () -> Unit,
-    onSelectPopular: () -> Unit,
     onSelectCategory: (ProductCategory) -> Unit
 )
  {
@@ -699,13 +813,7 @@ fun CategoryChipsRow(
             )
         }
 
-        item {
-            FilterChip(
-                selected = selectedFilter is CatalogFilter.Popular,
-                onClick = onSelectPopular,
-                label = { Text("Популярные") }
-            )
-        }
+
 
         items(categories) { cat ->
             FilterChip(
@@ -1040,6 +1148,7 @@ fun CartScreen(
 
     // Показывать ли диалог с формой оформления заказа
     var showOrderDialog by remember { mutableStateOf(false) }
+    var isSendingOrder by remember { mutableStateOf(false) }
 
     // Поля клиента (для диалога)
     var customerName by remember { mutableStateOf("") }
@@ -1194,6 +1303,8 @@ fun CartScreen(
                                 else -> {
                                     errorText = null
 
+                                    isSendingOrder = true
+
                                     val message = buildOrderMessage(
                                         cartItems = cartItems,
                                         customerName = customerName,
@@ -1214,6 +1325,7 @@ fun CartScreen(
                                         context = context,
                                         order = order,
                                         onSuccess = {
+                                            isSendingOrder = false
                                             Toast.makeText(context, "Заказ отправлен в Telegram ✅", Toast.LENGTH_LONG).show()
                                             showOrderDialog = false
 
@@ -1224,6 +1336,7 @@ fun CartScreen(
                                             customerComment = ""
                                         },
                                         onError = { err ->
+                                            isSendingOrder = false
                                             Toast.makeText(context, "Ошибка отправки: $err", Toast.LENGTH_LONG).show()
                                         }
                                     )
@@ -1231,6 +1344,8 @@ fun CartScreen(
                                 }
                             }
                         }
+                        ,
+                        enabled = !isSendingOrder
                     ) {
                         Text("Telegram")
                     }
@@ -1245,6 +1360,7 @@ fun CartScreen(
                                 customerAddress.isBlank() -> errorText = "Пожалуйста, укажите адрес доставки."
                                 else -> {
                                     errorText = null
+                                    isSendingOrder = true
 
                                     val message = buildOrderMessage(
                                         cartItems = cartItems,
@@ -1258,9 +1374,12 @@ fun CartScreen(
                                     sendOrderViaWhatsApp(context, message, "+79687008070")
 
                                     showOrderDialog = false
+                                    isSendingOrder = false
                                 }
                             }
                         }
+                        ,
+                        enabled = !isSendingOrder
                     ) {
                         Text("WhatsApp")
                     }
@@ -1277,6 +1396,23 @@ fun CartScreen(
                     Text("Отмена")
                 }
             }
+        )
+    }
+
+    if (isSendingOrder) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Отправка заказа") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Отправляем данные, пожалуйста подождите…")
+                }
+            },
+            confirmButton = {}
         )
     }
 }
@@ -1394,30 +1530,67 @@ fun ProductDetailsScreen(
     onAddToCart: (Product, Double) -> Unit
 ) {
     var showQtyDialog by remember { mutableStateOf(false) }
+    val unitText = if (product.unit == UnitType.KG) "кг" else "шт"
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(product.name) },
+            CenterAlignedTopAppBar(
+                title = { Text("О товаре") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
             )
+        },
+        bottomBar = {
+            Surface(
+                tonalElevation = 6.dp,
+                shadowElevation = 6.dp,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = "Цена",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${product.price.toInt()} ₽ / $unitText",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Button(onClick = { showQtyDialog = true }) {
+                        Text("В корзину")
+                    }
+                }
+            }
         }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
-                .padding(16.dp)
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
         ) {
 
-            Card(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp)
+                    .height(300.dp)
             ) {
                 if (product.imageUrl != null) {
                     AsyncImage(
@@ -1431,33 +1604,86 @@ fun ProductDetailsScreen(
                         Text("Фото товара")
                     }
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                                )
+                            )
+                        )
+                )
+
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = product.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    product.originCountry?.takeIf { it.isNotBlank() }?.let { country ->
+                        Text(
+                            text = "Страна: $country",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
-
-            Text(product.name, style = MaterialTheme.typography.headlineSmall)
-
-            Spacer(Modifier.height(8.dp))
-
-            val unitText = if (product.unit == UnitType.KG) "кг" else "шт"
-            Text(
-                text = "Цена: ${product.price.toInt()} ₽ / $unitText",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            product.originCountry?.takeIf { it.isNotBlank() }?.let { country ->
-                Spacer(Modifier.height(8.dp))
-                Text("Страна: $country", style = MaterialTheme.typography.bodyMedium)
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = { showQtyDialog = true },
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Text("Добавить в корзину")
-            }
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Описание",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = product.description?.takeIf { it.isNotBlank() }
+                                ?: "Описание пока не заполнено.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Характеристики",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Единица: $unitText",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        product.originCountry?.takeIf { it.isNotBlank() }?.let { country ->
+                            Text(
+                                text = "Производство: $country",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }            }
         }
     }
 
@@ -1625,6 +1851,7 @@ fun ProductEditDialog(
     var priceText by remember { mutableStateOf(initialProduct.price.toString()) }
     var originCountry by remember { mutableStateOf(initialProduct.originCountry ?: "") }
     var imageUrl by remember { mutableStateOf(initialProduct.imageUrl ?: "") }
+    var description by remember { mutableStateOf(initialProduct.description ?: "") }
     var isPopular by remember { mutableStateOf(initialProduct.isPopular) }
     var inStock by remember { mutableStateOf(initialProduct.inStock) }
     var category by remember { mutableStateOf(initialProduct.category) }
@@ -1730,6 +1957,17 @@ fun ProductEditDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Описание товара") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 100.dp),
+                    maxLines = 4
+                )
+
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1775,6 +2013,7 @@ fun ProductEditDialog(
                                 price = price,
                                 originCountry = originCountry.ifBlank { null },
                                 imageUrl = imageUrl.ifBlank { null },
+                                description = description.ifBlank { null },
                                 isPopular = isPopular,
                                 inStock = inStock,
                                 category = category,
@@ -1874,6 +2113,7 @@ fun AdminScreen(
                 unit = UnitType.KG,
                 imageUrl = null,
                 originCountry = null,
+                description = null,
                 isPopular = false,
                 inStock = true
             ),
@@ -1950,6 +2190,15 @@ fun AdminProductRow(
                     },
                     style = MaterialTheme.typography.bodySmall
                 )
+
+                product.description?.takeIf { it.isNotBlank() }?.let { description ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Описание: $description",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
@@ -2130,6 +2379,19 @@ fun buildOrderMap(
     )
 }
 
+fun buildSupportMap(
+    question: String,
+    phone: String
+): Map<String, Any> {
+    return mapOf(
+        "type" to "SUPPORT",
+        "createdAt" to System.currentTimeMillis(),
+        "phone" to phone.trim(),
+        "question" to question.trim()
+    )
+}
+
+
 
 
 
@@ -2170,6 +2432,7 @@ fun Product.toMap(): Map<String, Any?> = mapOf(
     "unit" to unit.name,
     "imageUrl" to imageUrl,
     "originCountry" to originCountry,
+    "description" to description,
     "isPopular" to isPopular,
     "inStock" to inStock
 )
@@ -2184,6 +2447,7 @@ fun DocumentSnapshot.toProduct(): Product? {
     val price = getDouble("price") ?: 0.0
     val imageUrl = getString("imageUrl")
     val originCountry = getString("originCountry")
+    val description = getString("description")
     val isPopular = getBoolean("isPopular") ?: false
     val inStock = getBoolean("inStock") ?: true
 
@@ -2207,6 +2471,7 @@ fun DocumentSnapshot.toProduct(): Product? {
         unit = unit,
         imageUrl = imageUrl,
         originCountry = originCountry,
+        description = description,
         isPopular = isPopular,
         inStock = inStock
     )

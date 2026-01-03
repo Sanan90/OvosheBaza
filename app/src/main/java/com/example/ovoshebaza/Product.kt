@@ -25,6 +25,7 @@ data class Product(
     val unit: UnitType,                // Единица измерения (кг или шт)
     val originCountry: String?, // Страна происхождения (может быть null)
     val imageUrl: String?,             // URL картинки (может быть null)
+    val description: String?,          // Описание товара (может быть null)
     val isPopular: Boolean,            // Флаг "популярный товар"
     val inStock: Boolean               // В наличии или нет
     // Позже добавим сюда ссылки на фотографии
@@ -51,6 +52,7 @@ val sampleProducts = listOf(
         unit = UnitType.KG,
         imageUrl = "https://images.pexels.com/photos/8390/food-wood-tomatoes.jpg", // просто пример
         originCountry = "Азербайджан",
+        description = "Плотные и сладкие томаты для салатов, соусов и закаток.",
         isPopular = true,
         inStock = true
     ),
@@ -62,6 +64,7 @@ val sampleProducts = listOf(
         unit = UnitType.KG,
         imageUrl = "https://images.pexels.com/photos/143133/pexels-photo-143133.jpeg",
         originCountry = "Россия",
+        description = "Хрустящие огурцы с тонкой кожицей — отлично для салатов.",
         isPopular = true,
         inStock = true
     ),
@@ -73,6 +76,7 @@ val sampleProducts = listOf(
         unit = UnitType.KG,
         imageUrl = "https://images.pexels.com/photos/4110470/pexels-photo-4110470.jpeg",
         originCountry = null,
+        description = "Молодой картофель с нежной мякотью, идеален для запекания.",
         isPopular = false,
         inStock = true
     ),
@@ -84,6 +88,7 @@ val sampleProducts = listOf(
         unit = UnitType.KG,
         imageUrl = "https://images.pexels.com/photos/102104/pexels-photo-102104.jpeg",
         originCountry = "Турция",
+        description = "Сочные красные яблоки с ярким ароматом.",
         isPopular = true,
         inStock = true
     ),
@@ -95,6 +100,7 @@ val sampleProducts = listOf(
         unit = UnitType.KG,
         imageUrl = "https://images.pexels.com/photos/461208/pexels-photo-461208.jpeg",
         originCountry = "Эквадор",
+        description = "Спелые сладкие бананы для перекуса и десертов.",
         isPopular = false,
         inStock = true
     ),
@@ -106,6 +112,7 @@ val sampleProducts = listOf(
         unit = UnitType.PIECE,
         imageUrl = "https://images.pexels.com/photos/1438672/pexels-photo-1438672.jpeg",
         originCountry = null,
+        description = "Ароматный укроп для свежести и вкуса блюд.",
         isPopular = true,
         inStock = true
     )
