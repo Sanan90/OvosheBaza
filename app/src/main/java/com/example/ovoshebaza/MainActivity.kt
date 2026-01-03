@@ -74,6 +74,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.google.firebase.functions.ktx.functions
 import kotlin.math.round
 
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
+import com.example.ovoshebaza.ui.theme.VeggieTheme
+
 
 
 // Главная Activity — точка входа в приложение
@@ -84,7 +97,9 @@ class MainActivity : ComponentActivity() {
         // setContent — запускаем Compose UI
         setContent {
             // Можно потом сделать свою тему, пока используем Material3 по умолчанию
-            VeggieShopApp()
+            VeggieTheme {
+                VeggieShopApp()
+            }
         }
     }
 }
@@ -109,86 +124,106 @@ fun VeggieShopApp() {
     var adminPinError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val noRippleInteraction = remember { MutableInteractionSource() }
-
-                        Text(
-                            text = "🍎 Мой овощной магазин",
-                            modifier = Modifier.clickable(
-                                interactionSource = noRippleInteraction,
-                                indication = null
-                            ) {
-                                    logoClickCount++
-
-                                    if (logoClickCount >= 7) {
-                                        logoClickCount = 0
-                                        // показываем диалог ввода PIN
-                                        showAdminPinDialog = true
-                                        adminPin = ""
-                                        adminPinError = null
-                                    }
-                                }
-                        )
-                    }
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                listOf(Screen.Catalog, Screen.Cart, Screen.Request).forEach { screen ->
-
-                    val icon = when (screen) {
-                        Screen.Catalog -> Icons.Default.Store
-                        Screen.Cart -> Icons.Default.ShoppingCart
-                        Screen.Request -> Icons.Default.NoteAdd
-                        Screen.Admin -> Icons.Default.Settings
-                        Screen.ProductDetails -> Icons.Default.Store // просто заглушка, в меню он не будет
-                    }
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val noRippleInteraction = remember { MutableInteractionSource() }
 
 
-                    NavigationBarItem(
-                        selected = (currentRoute == screen.route),
-                        onClick = {
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(Screen.Catalog.route) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        label = { Text(screen.label) },
-                        icon = {
-                            if (screen == Screen.Cart) {
-                                BadgedBox(
-                                    badge = {
-                                        val count = cartItems.size
-                                        if (count > 0) {
-                                            Badge {
-                                                Text(
-                                                    text = if (count > 99) "99+" else count.toString()
-                                                )
-                                            }
+                                Column(
+                                    modifier = Modifier.clickable(
+                                        interactionSource = noRippleInteraction,
+                                        indication = null
+                                    ) {
+
+                                        logoClickCount++
+
+                                        if (logoClickCount >= 7) {
+                                            logoClickCount = 0
+                                            // показываем диалог ввода PIN
+                                            showAdminPinDialog = true
+                                            adminPin = ""
+                                            adminPinError = null
                                         }
                                     }
-                                ) {
+                            ) {
+                                Text(
+                                    text = "🍎 Овощная база",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                                Text(
+                                    text = "свежие продукты каждый день",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                )
+        },
+        bottomBar = {
+
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
+                    listOf(Screen.Catalog, Screen.Cart, Screen.Request).forEach { screen ->
+
+                        val icon = when (screen) {
+                            Screen.Catalog -> Icons.Default.Store
+                            Screen.Cart -> Icons.Default.ShoppingCart
+                            Screen.Request -> Icons.Default.NoteAdd
+                            Screen.Admin -> Icons.Default.Settings
+                            Screen.ProductDetails -> Icons.Default.Store // просто заглушка, в меню он не будет
+                        }
+
+
+                        NavigationBarItem(
+                            selected = (currentRoute == screen.route),
+                            onClick = {
+                                if (currentRoute != screen.route) {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(Screen.Catalog.route) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            ),
+                            label = { Text(screen.label) },
+                            icon = {
+                                if (screen == Screen.Cart) {
+                                    BadgedBox(
+                                        badge = {
+                                            val count = cartItems.size
+                                            if (count > 0) {
+                                                Badge {
+                                                    Text(
+                                                        text = if (count > 99) "99+" else count.toString()
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = screen.label
+                                        )
+                                    }
+                                } else {
                                     Icon(
                                         imageVector = icon,
                                         contentDescription = screen.label
                                     )
-                                }
-                            } else {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = screen.label
-                                )
                             }
                         }
                     )
@@ -435,7 +470,9 @@ fun CatalogScreen(
         columns = GridCells.Fixed(2),
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(bottom = 24.dp, top = 6.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -461,13 +498,34 @@ fun CatalogScreen(
 
         // ---------- 2) Поиск ----------
         item(span = { GridItemSpan(maxLineSpan) }) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Поиск по названию") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                TextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Поиск по названию") },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null
+                        )
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
 
         // ---------- 3) Категории: сначала Все, потом остальные ----------
@@ -562,7 +620,12 @@ fun PopularMiniCard(
         modifier = Modifier
             .width(150.dp)
             .height(160.dp)
-            .clickable { onClick() }
+            .clickable { onClick() },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column {
             // --- Фото ---
@@ -570,6 +633,7 @@ fun PopularMiniCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(95.dp)
+                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
             ) {
                 val url = product.imageUrl
 
@@ -603,7 +667,8 @@ fun PopularMiniCard(
                 val unitText = if (product.unit == UnitType.KG) "кг" else "шт"
                 Text(
                     text = "${product.price.toInt()} ₽ / $unitText",
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -622,6 +687,7 @@ fun CategoryChipsRow(
 )
  {
     LazyRow(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
@@ -859,7 +925,12 @@ fun ProductCardLarge(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 220.dp)
-            .clickable { onOpenDetails() } // ✅ клик по карточке → детали
+            .clickable { onOpenDetails() }, // ✅ клик по карточке → детали
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
 
@@ -867,6 +938,7 @@ fun ProductCardLarge(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(140.dp) // ✅ сделал фото покрупнее
+                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
             ) {
                 if (product.imageUrl != null) {
                     AsyncImage(
@@ -906,11 +978,12 @@ fun ProductCardLarge(
                         append(" ")
                         append(if (product.unit == UnitType.KG) "кг" else "шт")
                     },
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
 
                 // ✅ чтобы клик по корзине НЕ открывал детали:
-                IconButton(
+                FilledTonalIconButton(
                     onClick = { showQuantityDialog = true },
                     modifier = Modifier
                         .padding(0.dp)
@@ -924,7 +997,11 @@ fun ProductCardLarge(
 
             product.originCountry?.let { country ->
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(country, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    country,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
