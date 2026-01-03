@@ -70,6 +70,11 @@ dependencies {
     // 🔹 Firestore Kotlin
     implementation("com.google.firebase:firebase-firestore-ktx")
 
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-functions-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
+
+
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

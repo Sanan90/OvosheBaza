@@ -1,0 +1,14 @@
+node_modules/
+*.local
+
+# Firebase Functions params/env files
+.env*
+*.env
+.env.*
+
+# Firebase legacy config (если появится)
+.runtimeconfig.json
+
+# Firebase debug logs
+firebase-debug.log
+*.log

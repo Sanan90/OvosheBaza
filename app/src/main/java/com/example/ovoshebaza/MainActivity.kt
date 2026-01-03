@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
@@ -34,6 +35,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
@@ -59,6 +62,18 @@ import androidx.navigation.navArgument
 
 import androidx.compose.material.icons.filled.ArrowBack
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
+
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
+import androidx.compose.foundation.interaction.MutableInteractionSource
+
+import android.content.Context
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.google.firebase.functions.ktx.functions
+import kotlin.math.round
+
 
 
 // Главная Activity — точка входа в приложение
@@ -100,10 +115,14 @@ fun VeggieShopApp() {
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val noRippleInteraction = remember { MutableInteractionSource() }
+
                         Text(
                             text = "🍎 Мой овощной магазин",
-                            modifier = Modifier
-                                .clickable {
+                            modifier = Modifier.clickable(
+                                interactionSource = noRippleInteraction,
+                                indication = null
+                            ) {
                                     logoClickCount++
 
                                     if (logoClickCount >= 7) {
@@ -363,66 +382,228 @@ sealed class CatalogFilter {
 
 
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CatalogScreen(
     products: List<Product>,
     onAddToCart: (Product, Double) -> Unit,
     onOpenDetails: (Product) -> Unit
 ) {
-    var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.Popular) }
+    // Фильтр: All / Category / Popular (как у тебя уже сделано)
+    var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.All) }
     var searchQuery by remember { mutableStateOf("") }
 
-    val filteredProducts = remember(selectedFilter, searchQuery, products) {
-        val baseList = when (selectedFilter) {
-            is CatalogFilter.Popular -> products.filter { it.inStock && it.isPopular }
-            is CatalogFilter.Category -> {
-                val cat = (selectedFilter as CatalogFilter.Category).category
-                products.filter { it.inStock && it.category == cat }
-            }
-            is CatalogFilter.All -> products.filter { it.inStock }
-        }
+    // Состояние грида (чтобы при нажатии "Все популярные" прокрутить вверх)
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
 
-        if (searchQuery.isBlank()) baseList
-        else baseList.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    // --- Данные ---
+    val inStockProducts = remember(products) { products.filter { it.inStock } }
+
+    val popularProducts = remember(inStockProducts) {
+        inStockProducts.filter { it.isPopular }
     }
 
-    Column(
+    // 5–6 популярных для верхней ленты
+    val popularPreview = remember(popularProducts) { popularProducts.take(6) }
+
+    // Категории: сначала "Все", потом остальные
+    val categories = remember(inStockProducts) {
+        inStockProducts
+            .mapNotNull { it.category }
+            .distinct()
+            .sorted()
+    }
+
+    // Фильтрация каталога
+    val filteredProducts = remember(selectedFilter, searchQuery, inStockProducts) {
+        val base = when (selectedFilter) {
+            is CatalogFilter.Popular -> inStockProducts.filter { it.isPopular }
+            is CatalogFilter.Category -> {
+                val cat = (selectedFilter as CatalogFilter.Category).category
+                inStockProducts.filter { it.category == cat }
+            }
+            is CatalogFilter.All -> inStockProducts
+        }
+
+        if (searchQuery.isBlank()) base
+        else base.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    LazyVerticalGrid(
+        state = gridState,
+        columns = GridCells.Fixed(2),
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text("Каталог", style = MaterialTheme.typography.titleLarge)
 
-        Spacer(modifier = Modifier.height(8.dp))
+        // ---------- 1) Популярные сверху (лента) ----------
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            if (popularPreview.isNotEmpty()) {
+                PopularRow(
+                    items = popularPreview,
+                    onOpenDetails = onOpenDetails,
+                    onOpenAllPopular = {
+                        selectedFilter = CatalogFilter.Popular
+                        // прокрутим к началу каталога (чтобы видеть результаты)
+                        scope.launch {
+                            gridState.animateScrollToItem(2) // примерно туда, где начинается сетка
+                        }
+                    }
+                )
+            } else {
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+        }
 
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            label = { Text("Поиск по названию") },
+        // ---------- 2) Поиск ----------
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Поиск по названию") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // ---------- 3) Категории: сначала Все, потом остальные ----------
+        // (Если хочешь “липкую” строку категорий — скажи, включим stickyHeader)
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            CategoryChipsRow(
+                categories = categories,
+                selectedFilter = selectedFilter,
+                onSelectAll = {
+                    selectedFilter = CatalogFilter.All
+                    scope.launch { gridState.animateScrollToItem(2) }
+                },
+                onSelectPopular = {
+                    selectedFilter = CatalogFilter.Popular
+                    scope.launch { gridState.animateScrollToItem(2) }
+                },
+                onSelectCategory = { cat ->
+                    selectedFilter = CatalogFilter.Category(cat)
+                    scope.launch { gridState.animateScrollToItem(2) }
+                }
+            )
+        }
+
+        // ---------- 4) Сетка товаров ----------
+        items(filteredProducts, key = { it.id }) { product ->
+            ProductCardLarge(
+                product = product,
+                onAddToCart = onAddToCart,
+                onOpenDetails = { onOpenDetails(product) }
+            )
+        }
+
+        // низ отступ
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+    }
+}
+
+
+
+
+@Composable
+fun PopularRow(
+    items: List<Product>,
+    onOpenDetails: (Product) -> Unit,
+    onOpenAllPopular: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    ) {
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Популярные", style = MaterialTheme.typography.titleMedium)
+
+            TextButton(onClick = onOpenAllPopular) {
+                Text("Все популярные")
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        CategoryFilterRow(
-            selectedFilter = selectedFilter,
-            onFilterSelected = { selectedFilter = it }
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(end = 12.dp)
         ) {
-            items(filteredProducts) { product ->
-                ProductCardLarge(
-                    product = product,
-                    onAddToCart = onAddToCart,
-                    onOpenDetails = { onOpenDetails(product) } // ✅ кликаем карточку → детали
+            items(items, key = { it.id }) { p ->
+                PopularMiniCard(
+                    product = p,
+                    onClick = { onOpenDetails(p) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+
+
+@Composable
+fun PopularMiniCard(
+    product: Product,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .width(150.dp)
+            .height(160.dp)
+            .clickable { onClick() }
+    ) {
+        Column {
+            // --- Фото ---
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(95.dp)
+            ) {
+                val url = product.imageUrl
+
+                if (!url.isNullOrBlank()) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Фото", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            // --- Текст ---
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = product.name,
+                    maxLines = 2,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val unitText = if (product.unit == UnitType.KG) "кг" else "шт"
+                Text(
+                    text = "${product.price.toInt()} ₽ / $unitText",
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
@@ -431,9 +612,57 @@ fun CatalogScreen(
 
 
 
+@Composable
+fun CategoryChipsRow(
+    categories: List<ProductCategory>,
+    selectedFilter: CatalogFilter,
+    onSelectAll: () -> Unit,
+    onSelectPopular: () -> Unit,
+    onSelectCategory: (ProductCategory) -> Unit
+)
+ {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 10.dp)
+    ) {
+        item {
+            FilterChip(
+                selected = selectedFilter is CatalogFilter.All,
+                onClick = onSelectAll,
+                label = { Text("Все") }
+            )
+        }
 
+        item {
+            FilterChip(
+                selected = selectedFilter is CatalogFilter.Popular,
+                onClick = onSelectPopular,
+                label = { Text("Популярные") }
+            )
+        }
 
+        items(categories) { cat ->
+            FilterChip(
+                selected = selectedFilter is CatalogFilter.Category &&
+                        (selectedFilter as CatalogFilter.Category).category == cat,
+                onClick = { onSelectCategory(cat) },
+                label = {
+                    Text(
+                        when (cat) {
+                            ProductCategory.VEGETABLES -> "Овощи"
+                            ProductCategory.FRUITS -> "Фрукты"
+                            ProductCategory.BERRIES -> "Ягоды"
+                            ProductCategory.GREENS -> "Зелень"
+                            ProductCategory.NUTS -> "Орехи / сухофрукты"
+                            ProductCategory.OTHER -> "Другое"
+                        }
+                    )
+                }
+            )
+        }
 
+    }
+}
 
 
 // Ряд кнопок-фильтров: Популярные, Овощи, Фрукты, ... , Все
@@ -497,19 +726,35 @@ fun QuantityPickerDialog(
     onConfirm: (Double) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var tempQuantity by remember { mutableStateOf(initialQuantity.coerceAtLeast(0.0)) }
+    // --- helpers ---
+    fun kgToGrams(kg: Double): Int = kotlin.math.round(kg * 1000.0).toInt()
+    fun gramsToKg(grams: Int): Double = grams / 1000.0
+
+    fun formatButtonValue(value: Double): String =
+        if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
 
     val unitLabel = if (unit == UnitType.KG) "кг" else "шт"
 
     val options: List<Double> =
-        if (unit == UnitType.KG) listOf(0.1, 0.5, 1.0, 2.0, 5.0)
+        if (unit == UnitType.KG) listOf(0.1, 0.5, 1.0, 5.0, 10.0)
         else listOf(1.0, 2.0, 3.0, 5.0, 10.0)
+
+    // Внутреннее хранение:
+    // KG -> граммы (Int)
+    // PIECE -> штуки (Int)
+    var tempGrams by remember(unit) {
+        mutableStateOf(if (unit == UnitType.KG) kgToGrams(initialQuantity.coerceAtLeast(0.0)) else 0)
+    }
+    var tempPieces by remember(unit) {
+        mutableStateOf(if (unit == UnitType.KG) 0 else initialQuantity.coerceAtLeast(0.0).toInt())
+    }
+
+    val tempQuantity: Double =
+        if (unit == UnitType.KG) gramsToKg(tempGrams) else tempPieces.toDouble()
 
     AlertDialog(
         onDismissRequest = { onDismiss() },
-        title = {
-            Text("Выбор количества")
-        },
+        title = { Text("Выбор количества") },
         text = {
             Column {
                 Text(
@@ -534,11 +779,10 @@ fun QuantityPickerDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Кнопки с вариантами
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val chunked = options.chunked(3)
-                    chunked.forEach { rowOptions ->
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val rows = options.chunked(3)
+
+                    rows.forEach { rowOptions ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -546,17 +790,27 @@ fun QuantityPickerDialog(
                             rowOptions.forEach { value ->
                                 Button(
                                     onClick = {
-                                        tempQuantity += value
+                                        if (unit == UnitType.KG) tempGrams += kgToGrams(value)
+                                        else tempPieces += value.toInt()
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(24.dp)
                                 ) {
+                                    // ✅ без пробела, чтобы не переносилось: 0.5кг / 10шт
                                     Text(
-                                        text = if (value % 1.0 == 0.0) {
-                                            value.toInt().toString()
-                                        } else {
-                                            value.toString()
-                                        }
+                                        text = "${formatButtonValue(value)}$unitLabel",
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
+                                }
+                            }
+
+                            // Добиваем пустыми, чтобы кнопки не "плясали"
+                            if (rowOptions.size < 3) {
+                                repeat(3 - rowOptions.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
@@ -566,30 +820,29 @@ fun QuantityPickerDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 TextButton(
-                    onClick = { tempQuantity = 0.0 }
+                    onClick = {
+                        if (unit == UnitType.KG) tempGrams = 0 else tempPieces = 0
+                    }
                 ) {
                     Text("Обнулить")
                 }
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    onConfirm(tempQuantity.coerceAtLeast(0.0))
-                }
-            ) {
+            TextButton(onClick = { onConfirm(tempQuantity.coerceAtLeast(0.0)) }) {
                 Text("Сохранить")
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = { onDismiss() }
-            ) {
+            TextButton(onClick = { onDismiss() }) {
                 Text("Отмена")
             }
         }
     )
 }
+
+
+
 
 
 
@@ -853,45 +1106,90 @@ fun CartScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        // Простая проверка полей
-                        when {
-                            customerName.isBlank() -> {
-                                errorText = "Пожалуйста, укажите имя."
-                            }
-                            customerPhone.isBlank() -> {
-                                errorText = "Пожалуйста, укажите телефон."
-                            }
-                            customerAddress.isBlank() -> {
-                                errorText = "Пожалуйста, укажите адрес доставки."
-                            }
-                            else -> {
-                                errorText = null
+                Row {
+                    TextButton(
+                        onClick = {
+                            // проверка полей (как у тебя)
+                            when {
+                                customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
+                                customerPhone.isBlank() -> errorText = "Пожалуйста, укажите телефон."
+                                customerAddress.isBlank() -> errorText = "Пожалуйста, укажите адрес доставки."
+                                else -> {
+                                    errorText = null
 
-                                // Собираем текст заказа
-                                val message = buildOrderMessage(
-                                    cartItems = cartItems,
-                                    customerName = customerName,
-                                    customerPhone = customerPhone,
-                                    customerAddress = customerAddress,
-                                    comment = customerComment
-                                )
+                                    val message = buildOrderMessage(
+                                        cartItems = cartItems,
+                                        customerName = customerName,
+                                        customerPhone = customerPhone,
+                                        customerAddress = customerAddress,
+                                        comment = customerComment
+                                    )
 
-                                // Отправляем через Telegram (или через шаринг, если Telegram не найден)
-                                sendOrderViaTelegram(context, message)
+                                    val order = buildOrderMap(
+                                        cartItems = cartItems,
+                                        customerName = customerName,
+                                        customerPhone = customerPhone,
+                                        customerAddress = customerAddress,
+                                        comment = customerComment
+                                    )
 
-                                // Закрываем диалог
-                                showOrderDialog = false
+                                    sendOrderViaFirebaseTelegram(
+                                        context = context,
+                                        order = order,
+                                        onSuccess = {
+                                            Toast.makeText(context, "Заказ отправлен в Telegram ✅", Toast.LENGTH_LONG).show()
+                                            showOrderDialog = false
 
-                                // (по желанию позже можем очищать поля формы и корзину)
+                                            // (по желанию) очистка полей после успешной отправки:
+                                            customerName = ""
+                                            customerPhone = ""
+                                            customerAddress = ""
+                                            customerComment = ""
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(context, "Ошибка отправки: $err", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+
+                                }
                             }
                         }
+                    ) {
+                        Text("Telegram")
                     }
-                ) {
-                    Text("Отправить в Telegram")
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    TextButton(
+                        onClick = {
+                            when {
+                                customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
+                                customerPhone.isBlank() -> errorText = "Пожалуйста, укажите телефон."
+                                customerAddress.isBlank() -> errorText = "Пожалуйста, укажите адрес доставки."
+                                else -> {
+                                    errorText = null
+
+                                    val message = buildOrderMessage(
+                                        cartItems = cartItems,
+                                        customerName = customerName,
+                                        customerPhone = customerPhone,
+                                        customerAddress = customerAddress,
+                                        comment = customerComment
+                                    )
+
+                                    // WhatsApp на твой номер
+                                    sendOrderViaWhatsApp(context, message, "+79687008070")
+
+                                    showOrderDialog = false
+                                }
+                            }
+                        }
+                    ) {
+                        Text("WhatsApp")
+                    }
                 }
-            },
+            }
+            ,
             dismissButton = {
                 TextButton(
                     onClick = {
@@ -1263,8 +1561,14 @@ fun ProductEditDialog(
             Text(if (isNew) "Новый товар" else "Редактирование товара")
         },
         text = {
+            val scrollState = rememberScrollState()
+
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)     // чтобы диалог не был бесконечным
+                    .verticalScroll(scrollState)
+                    .padding(end = 6.dp)       // чтобы полоса/скролл не наезжал на текст
             ) {
                 OutlinedTextField(
                     value = name,
@@ -1454,7 +1758,6 @@ fun AdminScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Список товаров
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
@@ -1463,13 +1766,15 @@ fun AdminScreen(
                 val product = products[index]
                 AdminProductRow(
                     product = product,
-                    onEditClick = { showEditDialog = product }
+                    onEditClick = { showEditDialog = product },
+                    onQuickPriceChange = { updated ->
+                        onUpdateProduct(updated)
+                    }
                 )
             }
         }
     }
 
-    // Диалог редактирования существующего товара
     val productToEdit = showEditDialog
     if (productToEdit != null) {
         ProductEditDialog(
@@ -1478,13 +1783,10 @@ fun AdminScreen(
                 onUpdateProduct(updated)
                 showEditDialog = null
             },
-            onDismiss = {
-                showEditDialog = null
-            }
+            onDismiss = { showEditDialog = null }
         )
     }
 
-    // Диалог добавления нового товара
     if (showAddDialog) {
         ProductEditDialog(
             initialProduct = Product(
@@ -1503,92 +1805,167 @@ fun AdminScreen(
                 onAddProduct(newProduct)
                 showAddDialog = false
             },
-            onDismiss = {
-                showAddDialog = false
+            onDismiss = { showAddDialog = false }
+        )
+    }
+}
+
+
+
+@Composable
+fun AdminProductRow(
+    product: Product,
+    onEditClick: () -> Unit,
+    onQuickPriceChange: (Product) -> Unit
+) {
+    var showPriceDialog by remember { mutableStateOf(false) }
+
+    val unitLabel = when (product.unit) {
+        UnitType.KG -> "кг"
+        UnitType.PIECE -> "шт"
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+
+            // Левая часть (вся инфа)
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = product.name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // ✅ Цена кликабельна -> быстрый ввод
+                Text(
+                    text = "Цена: ${product.price.toInt()} ₽ / $unitLabel",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.clickable { showPriceDialog = true }
+                )
+
+                product.originCountry?.let { country ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Страна: $country",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "Категория: " + when (product.category) {
+                        ProductCategory.VEGETABLES -> "Овощи"
+                        ProductCategory.FRUITS -> "Фрукты"
+                        ProductCategory.BERRIES -> "Ягоды"
+                        ProductCategory.GREENS -> "Зелень"
+                        ProductCategory.NUTS -> "Орехи/сухофрукты"
+                        ProductCategory.OTHER -> "Другое"
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "Популярный: ${if (product.isPopular) "да" else "нет"}, в наличии: ${if (product.inStock) "да" else "нет"}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "Нажмите на цену, чтобы быстро изменить.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Правая часть: кнопка "Изменить" напротив данных
+            TextButton(onClick = onEditClick) {
+                Text("Изменить")
+            }
+        }
+    }
+
+    if (showPriceDialog) {
+        QuickPriceDialog(
+            currentPrice = product.price,
+            onConfirm = { newPrice ->
+                onQuickPriceChange(product.copy(price = newPrice))
+                showPriceDialog = false
+            },
+            onDismiss = { showPriceDialog = false }
         )
     }
 }
 
 
 @Composable
-fun AdminProductRow(
-    product: Product,
-    onEditClick: () -> Unit
+fun QuickPriceDialog(
+    currentPrice: Double,
+    onConfirm: (Double) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(8.dp)
-        ) {
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.titleMedium
-            )
+    var priceText by remember { mutableStateOf(currentPrice.toInt().toString()) }
+    var errorText by remember { mutableStateOf<String?>(null) }
 
-            Spacer(modifier = Modifier.height(2.dp))
+    AlertDialog(
+        onDismissRequest = { onDismiss() },
+        title = { Text("Быстрая смена цены") },
+        text = {
+            Column {
+                Text("Введите новую цену (в рублях):")
 
-            Text(
-                text = buildString {
-                    append(product.price.toInt())
-                    append(" ")
-                    append(
-                        when (product.unit) {
-                            UnitType.KG -> "кг"
-                            UnitType.PIECE -> "шт"
-                        }
-                    )
-                },
-                style = MaterialTheme.typography.bodyMedium
-            )
+                Spacer(modifier = Modifier.height(8.dp))
 
-            product.originCountry?.let { country ->
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Страна: $country",
-                    style = MaterialTheme.typography.bodySmall
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it },
+                    label = { Text("Цена") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                 )
-            }
 
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = buildString {
-                    append("Категория: ")
-                    append(
-                        when (product.category) {
-                            ProductCategory.VEGETABLES -> "Овощи"
-                            ProductCategory.FRUITS -> "Фрукты"
-                            ProductCategory.BERRIES -> "Ягоды"
-                            ProductCategory.GREENS -> "Зелень"
-                            ProductCategory.NUTS -> "Орехи/сухофрукты"
-                            ProductCategory.OTHER -> "Другое"
-                        }
+                if (errorText != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = errorText!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
                     )
-                },
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = "Популярный: ${if (product.isPopular) "да" else "нет"}, в наличии: ${if (product.inStock) "да" else "нет"}",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TextButton(onClick = onEditClick) {
-                    Text("Изменить")
                 }
             }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val newPrice = priceText.replace(",", ".").toDoubleOrNull()
+                    if (newPrice == null || newPrice <= 0.0) {
+                        errorText = "Введите корректную цену"
+                    } else {
+                        errorText = null
+                        onConfirm(newPrice)
+                    }
+                }
+            ) { Text("Сохранить") }
+        },
+        dismissButton = {
+            TextButton(onClick = { onDismiss() }) {
+                Text("Отмена")
+            }
         }
-    }
+    )
 }
 
 
@@ -1642,6 +2019,40 @@ fun buildOrderMessage(
 
     return sb.toString()
 }
+
+
+fun buildOrderMap(
+    cartItems: List<CartItem>,
+    customerName: String,
+    customerPhone: String,
+    customerAddress: String,
+    comment: String
+): Map<String, Any> {
+    val items = cartItems.map { item ->
+        mapOf(
+            "id" to item.product.id,
+            "name" to item.product.name,
+            "quantity" to item.quantity,
+            "unit" to item.product.unit.name,   // "KG" или "PIECE"
+            "price" to item.product.price,
+            "sum" to (item.product.price * item.quantity)
+        )
+    }
+
+    val total = cartItems.sumOf { it.product.price * it.quantity }
+
+    return mapOf(
+        "type" to "ORDER",
+        "createdAt" to System.currentTimeMillis(),
+        "customerName" to customerName,
+        "customerPhone" to customerPhone,
+        "customerAddress" to customerAddress,
+        "comment" to comment,
+        "total" to total,
+        "items" to items
+    )
+}
+
 
 
 
@@ -1770,5 +2181,51 @@ fun sendOrderViaTelegram(context: android.content.Context, message: String) {
     }
 }
 
+
+fun sendOrderViaWhatsApp(context: Context, message: String, phoneE164: String) {
+    try {
+        // WhatsApp использует номер без "+"
+        val phone = phoneE164.replace("+", "").trim()
+
+        val encodedText = Uri.encode(message)
+        val uri = Uri.parse("https://wa.me/$phone?text=$encodedText")
+
+        val intent = Intent(Intent.ACTION_VIEW, uri)
+
+        // Попробуем открыть именно WhatsApp (если установлен)
+        intent.setPackage("com.whatsapp")
+
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // Если WhatsApp не открылся, пробуем через браузер (wa.me откроет WhatsApp если может)
+        try {
+            val phone = phoneE164.replace("+", "").trim()
+            val encodedText = Uri.encode(message)
+            val uri = Uri.parse("https://wa.me/$phone?text=$encodedText")
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: Exception) {
+            Toast.makeText(context, "Не удалось открыть WhatsApp или браузер", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+fun sendOrderViaFirebaseTelegram(
+    context: Context,
+    order: Map<String, Any>,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val functions = com.google.firebase.ktx.Firebase.functions
+
+    functions
+        .getHttpsCallable("sendOrderToTelegram")
+        .call(order)
+        .addOnSuccessListener {
+            onSuccess()
+        }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Ошибка отправки")
+        }
+}
 
 

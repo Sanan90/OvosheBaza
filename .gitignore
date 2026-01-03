@@ -23,3 +23,16 @@ google-services.json
 .DS_Store
 captures/
 .externalNativeBuild/
+
+
+# Keystore files (очень важно!)
+*.jks
+*.keystore
+
+# Gradle signing configs (если есть)
+signing.properties
+key.properties
+
+# Firebase / Google secrets (на всякий)
+**/serviceAccountKey.json
+**/*service-account*.json
