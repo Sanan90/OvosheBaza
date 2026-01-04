@@ -1,136 +1,127 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret, defineString } = require("firebase-functions/params");
+const { onCall } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
+const { defineSecret, defineString } = require("firebase-functions/params");
 
-// Секрет (токен бота) — хранится в Secret Manager
 const TELEGRAM_TOKEN = defineSecret("TELEGRAM_TOKEN");
-
-// chat_id группы/чата — строковый параметр
 const TELEGRAM_CHAT_ID = defineString("TELEGRAM_CHAT_ID");
 
-// ---------- helpers ----------
-function isNonEmptyString(v) {
-  return typeof v === "string" && v.trim().length > 0;
+// Красивое число: убираем 0.30000000004 и лишние нули
+function fmtNum(n, digits = 3) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "-";
+  const fixed = x.toFixed(digits);
+  return fixed.replace(/\.?0+$/, ""); // "1.000" -> "1", "0.500"->"0.5"
 }
 
-function num(v, def = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
+function fmtMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "-";
+  // можно без копеек:
+  return Math.round(x).toString();
 }
 
-function formatQty(qty, unit) {
-  // qty может быть 0.5, 1, 2 и т.д.
-  // Для кг показываем до 3 знаков, но без лишних нулей
-  if (unit === "KG") {
-    const s = qty.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-    return s.length ? s : "0";
-  }
-  // Для шт — целое
-  return String(Math.round(qty));
-}
-
-function unitLabel(unit) {
-  return unit === "KG" ? "кг" : "шт";
-}
-
-// ---------- main function ----------
 exports.sendOrderToTelegram = onCall(
   {
-    secrets: [TELEGRAM_TOKEN],
     cors: true,
+    secrets: [TELEGRAM_TOKEN],
   },
   async (request) => {
     try {
       const data = request.data || {};
+      const type = String(data.type || "ORDER").toUpperCase();
 
       const token = TELEGRAM_TOKEN.value();
       const chatId = TELEGRAM_CHAT_ID.value();
 
-      if (!token) throw new HttpsError("failed-precondition", "Нет TELEGRAM_TOKEN");
-      if (!chatId) throw new HttpsError("failed-precondition", "Нет TELEGRAM_CHAT_ID");
-
-      const type = String(data.type || "ORDER").toUpperCase();
-
-      // ---- ЛОГИ (безопасно, токен не печатаем) ----
-      logger.info("sendOrderToTelegram called", {
-        type,
-        tokenLen: token ? token.length : 0,
-        tokenPrefix: token ? token.slice(0, 6) : null,
-        chatId,
-      });
+      if (!token) throw new Error("TELEGRAM_TOKEN пустой");
+      if (!chatId) throw new Error("TELEGRAM_CHAT_ID пустой");
 
       let text = "";
 
-      // =========================================================
-      // SUPPORT
-      // =========================================================
+      // =========================
+      // 1) SUPPORT (поддержка)
+      // =========================
       if (type === "SUPPORT") {
-        const phone = String(data.phone || "").trim();
-        const question = String(data.question || "").trim();
+        const phone = (data.phone || "").toString().trim();
+        const question = (data.question || "").toString().trim();
 
-        if (!isNonEmptyString(phone)) {
-          throw new HttpsError("invalid-argument", "В поддержке не передан phone");
-        }
-        if (!isNonEmptyString(question)) {
-          throw new HttpsError("invalid-argument", "В поддержке не передан question");
-        }
+        if (!question) throw new Error("В поддержке нет question");
 
         text =
           `🆘 ОБРАЩЕНИЕ В ПОДДЕРЖКУ\n\n` +
-          `📞 Телефон: ${phone}\n\n` +
-          `❓ Вопрос:\n${question}\n`;
+          `📞 Телефон: ${phone || "-"}\n\n` +
+          `💬 Вопрос:\n${question}\n`;
 
+      // =========================
+      // 2) REQUEST (заявка на товар)
+      // =========================
+      } else if (type === "REQUEST") {
+        const customerName = (data.customerName || "").toString().trim();
+        const customerPhone = (data.customerPhone || "").toString().trim();
+        const requestedProduct = (data.requestedProduct || "").toString().trim();
+        const requestedQuantity = (data.requestedQuantity || "").toString().trim();
+        const comment = (data.comment || "").toString().trim();
+
+        if (!requestedProduct) throw new Error("В заявке нет requestedProduct");
+        if (!customerPhone && !customerName) throw new Error("В заявке нет контактов (имя/телефон)");
+
+        text =
+          `📝 ЗАЯВКА НА ТОВАР\n\n` +
+          `👤 Имя: ${customerName || "-"}\n` +
+          `📞 Телефон: ${customerPhone || "-"}\n\n` +
+          `🛒 Что нужно заказать:\n${requestedProduct}\n\n` +
+          `⚖️ Количество:\n${requestedQuantity || "-"}\n` +
+          (comment ? `\n💬 Комментарий:\n${comment}\n` : "");
+
+      // =========================
+      // 3) ORDER (заказ из корзины)
+      // =========================
       } else {
-        // =========================================================
-        // ORDER (по умолчанию)
-        // =========================================================
+        const items = data.items;
 
-        const customerName = String(data.customerName || "-");
-        const customerPhone = String(data.customerPhone || "-");
-        const customerAddress = String(data.customerAddress || "-");
-        const comment = String(data.comment || "").trim();
-
-        const items = Array.isArray(data.items) ? data.items : [];
-
-        // Если это заказ, но items пустой — лучше явно сказать
-        if (items.length === 0) {
-          throw new HttpsError("invalid-argument", "В заказе нет items (пусто или не массив)");
+        if (!Array.isArray(items) || items.length === 0) {
+          throw new Error("В заказе нет items (пусто или не массив)");
         }
 
-        let itemsText = "";
-        let calcTotal = 0;
+        const customerName = (data.customerName || "").toString().trim();
+        const customerPhone = (data.customerPhone || "").toString().trim();
+        const customerAddress = (data.customerAddress || "").toString().trim();
+        const comment = (data.comment || "").toString().trim();
 
-        items.forEach((item, index) => {
-          const name = String(item.name || "Без названия");
-          const unit = String(item.unit || "KG").toUpperCase(); // KG / PIECE
-          const qty = num(item.quantity, 0);
-          const price = num(item.price, 0);
+        // Красивый список как чек
+        const itemsText = items
+          .map((it) => {
+            const name = (it.name || "").toString();
+            const qty = it.quantity;
+            const unit = (it.unit || "").toString().toUpperCase(); // "KG" или "PIECE"
+            const price = it.price;
+            const sum = it.sum;
 
-          // sum может прийти готовым, но если нет — считаем сами
-          const sum = num(item.sum, qty * price);
+            const unitLabel = unit === "KG" ? "кг" : "шт";
 
-          calcTotal += sum;
+            return `• ${name} — ${fmtNum(qty)} ${unitLabel} × ${fmtMoney(price)} = ${fmtMoney(sum)}`;
+          })
+          .join("\n");
 
-          itemsText +=
-            `${index + 1}) ${name} — ` +
-            `${formatQty(qty, unit)} ${unitLabel(unit)} × ${Math.round(price)} ₽ = ${Math.round(sum)} ₽\n`;
-        });
-
-        const total = num(data.total, calcTotal);
+        const total = fmtMoney(data.total);
+        const subtotal = fmtMoney(data.subtotal);
+        const deliveryFee = fmtMoney(data.deliveryFee);
+        const discount = fmtMoney(data.discount);
 
         text =
           `🧾 НОВЫЙ ЗАКАЗ\n\n` +
-          `👤 Имя: ${customerName}\n` +
-          `📞 Телефон: ${customerPhone}\n` +
-          `📍 Адрес: ${customerAddress}\n` +
-          (comment ? `📝 Комментарий: ${comment}\n` : "") +
-          `\n🛒 Товары:\n${itemsText}` +
-          `\n💰 Итого: ~ ${Math.round(total)} ₽\n` +
-          `(Фактическая сумма может немного отличаться из-за точного веса)\n`;
+          `👤 Имя: ${customerName || "-"}\n` +
+          `📞 Телефон: ${customerPhone || "-"}\n` +
+          `📍 Адрес: ${customerAddress || "-"}\n` +
+          (comment ? `💬 Комментарий: ${comment}\n` : "") +
+          `\n🛒 Товары:\n${itemsText}\n\n` +
+          `💵 Подитог: ${subtotal}\n` +
+          `🚚 Доставка: ${deliveryFee}\n` +
+          `🏷 Скидка: ${discount}\n` +
+          `💰 ИТОГО: ${total}`;
       }
 
-      // ---- отправка в Telegram ----
       const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
       const tgResp = await axios.post(url, {
@@ -138,22 +129,11 @@ exports.sendOrderToTelegram = onCall(
         text,
       });
 
-      if (!tgResp.data || tgResp.data.ok !== true) {
-        logger.error("Telegram API error", tgResp.data);
-        throw new HttpsError("internal", "Telegram API error", tgResp.data);
-      }
-
-      logger.info("Message sent to Telegram", { type });
-      return { ok: true, type };
-
+      logger.info("Telegram sent ok", tgResp.data);
+      return { ok: true };
     } catch (e) {
       logger.error("sendOrderToTelegram error", e);
-
-      // Если это уже HttpsError — пробрасываем как есть
-      if (e instanceof HttpsError) throw e;
-
-      // Иначе превращаем в internal
-      throw new HttpsError("internal", e?.message ? String(e.message) : "Unknown error");
+      throw new Error(e.message || String(e));
     }
   }
 );

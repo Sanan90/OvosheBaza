@@ -144,6 +144,7 @@ fun VeggieShopApp() {
     var supportQuestion by remember { mutableStateOf("") }
     var supportPhone by remember { mutableStateOf("") }
     var supportError by remember { mutableStateOf<String?>(null) }
+    var isSendingSupport by remember { mutableStateOf(false) }
     val helperIconRes = remember {
         listOf(
             R.drawable.helper,
@@ -155,6 +156,7 @@ fun VeggieShopApp() {
     val hideSupportIcon =
         currentRoute == Screen.Cart.route ||
                 currentRoute == Screen.Admin.route ||
+                currentRoute == Screen.Request.route ||
                 currentRoute.startsWith("product/")
     val supportIconOffsetX by animateDpAsState(
         targetValue = if (hideSupportIcon) 96.dp else 0.dp,
@@ -389,6 +391,7 @@ fun VeggieShopApp() {
                             return@TextButton
                         }
                         supportError = null
+                        isSendingSupport = true
                         val supportPayload = buildSupportMap(
                             question = supportQuestion,
                             phone = supportPhone
@@ -397,6 +400,7 @@ fun VeggieShopApp() {
                             context = context,
                             order = supportPayload,
                             onSuccess = {
+                                isSendingSupport = false
                                 Toast.makeText(
                                     context,
                                     "Вопрос отправлен в поддержку ✅",
@@ -405,6 +409,7 @@ fun VeggieShopApp() {
                                 showSupportDialog = false
                             },
                             onError = { err ->
+                                isSendingSupport = false
                                 Toast.makeText(
                                     context,
                                     "Ошибка отправки: $err",
@@ -424,6 +429,24 @@ fun VeggieShopApp() {
             }
         )
     }
+
+    if (isSendingSupport) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Отправка вопроса") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Отправляем сообщение, пожалуйста подождите…")
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
 
     // ----- Диалог ввода PIN для админки -----
     if (showAdminPinDialog) {
@@ -1867,6 +1890,7 @@ fun RequestProductScreen() {
     var requestedProduct by remember { mutableStateOf("") }
     var requestedQuantity by remember { mutableStateOf("") }
     var comment by remember { mutableStateOf("") }
+    var isSendingRequest by remember { mutableStateOf(false) }
 
     var errorText by remember { mutableStateOf<String?>(null) }
 
@@ -1961,7 +1985,7 @@ fun RequestProductScreen() {
                     else -> {
                         errorText = null
 
-                        val message = buildRequestMessage(
+                        val requestPayload = buildRequestMap(
                             customerName = customerName,
                             customerPhone = customerPhone,
                             requestedProduct = requestedProduct,
@@ -1970,13 +1994,27 @@ fun RequestProductScreen() {
                         )
 
                         // Используем ту же функцию, что и для заказа
-                        sendOrderViaTelegram(context, message)
-
-                        Toast.makeText(
-                            context,
-                            "Заявка сформирована. Текст скопирован, откройте Telegram.",
-                            Toast.LENGTH_LONG
-                        ).show()
+                        isSendingRequest = true
+                        sendOrderViaFirebaseTelegram(
+                            context = context,
+                            order = requestPayload,
+                            onSuccess = {
+                                isSendingRequest = false
+                                Toast.makeText(
+                                    context,
+                                    "Заявка отправлена в Telegram ✅",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            onError = { err ->
+                                isSendingRequest = false
+                                Toast.makeText(
+                                    context,
+                                    "Ошибка отправки: $err",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
 
                         // По желанию — очищаем поля после отправки
                         requestedProduct = ""
@@ -1988,9 +2026,28 @@ fun RequestProductScreen() {
                 }
             },
             modifier = Modifier.fillMaxWidth()
+            ,
+            enabled = !isSendingRequest
         ) {
-            Text("Отправить заявку в Telegram")
+            Text("Отправить заявку")
         }
+    }
+
+    if (isSendingRequest) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Отправка заявки") },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text("Отправляем заявку, пожалуйста подождите…")
+                }
+            },
+            confirmButton = {}
+        )
     }
 }
 
@@ -2585,6 +2642,23 @@ fun buildSupportMap(
 
 
 
+fun buildRequestMap(
+    customerName: String,
+    customerPhone: String,
+    requestedProduct: String,
+    requestedQuantity: String,
+    comment: String
+): Map<String, Any> {
+    return mapOf(
+        "type" to "REQUEST",
+        "createdAt" to System.currentTimeMillis(),
+        "customerName" to customerName.trim(),
+        "customerPhone" to customerPhone.trim(),
+        "requestedProduct" to requestedProduct.trim(),
+        "requestedQuantity" to requestedQuantity.trim(),
+        "comment" to comment.trim()
+    )
+}
 
 
 
