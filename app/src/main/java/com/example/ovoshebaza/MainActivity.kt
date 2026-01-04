@@ -96,6 +96,11 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.unit.lerp
 import kotlinx.coroutines.delay
+import android.graphics.Color as AndroidColor
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.graphics.graphicsLayer
 
 
 
@@ -103,6 +108,7 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = AndroidColor.parseColor("#2E7D32")
 
         // setContent — запускаем Compose UI
         setContent {
@@ -146,6 +152,20 @@ fun VeggieShopApp() {
             R.drawable.helper4
         ).random()
     }
+    val hideSupportIcon =
+        currentRoute == Screen.Cart.route ||
+                currentRoute == Screen.Admin.route ||
+                currentRoute.startsWith("product/")
+    val supportIconOffsetX by animateDpAsState(
+        targetValue = if (hideSupportIcon) 96.dp else 0.dp,
+        animationSpec = tween(durationMillis = 550),
+        label = "supportIconOffsetX"
+    )
+    val supportIconAlpha by animateFloatAsState(
+        targetValue = if (hideSupportIcon) 0f else 1f,
+        animationSpec = tween(durationMillis = 550),
+        label = "supportIconAlpha"
+    )
     val supportIconOffset = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
@@ -194,11 +214,15 @@ fun VeggieShopApp() {
                                 Text(
                                     text = "свежие продукты каждый день",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                                 )
                             }
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 )
         },
         bottomBar = {
@@ -300,6 +324,8 @@ fun VeggieShopApp() {
                         bottom = innerPadding.calculateBottomPadding() + 0.dp
                     )
                     .size(75.dp)
+                    .offset(x = supportIconOffsetX)
+                    .graphicsLayer(alpha = supportIconAlpha)
                     .offset(y = lerp(0.dp, (-6).dp, supportIconOffset.value))
                     .clickable {
                         showSupportDialog = true
@@ -554,8 +580,16 @@ sealed class CatalogFilter {
 
     // Показываем все товары
     object All : CatalogFilter()
+
+
+    // Показываем товары, которых нет в наличии
+    object OutOfStock : CatalogFilter()
 }
 
+enum class PaymentMethod(val label: String) {
+    CASH("Наличные при получении"),
+    CARD("Картой при получении")
+}
 
 
 
@@ -577,14 +611,14 @@ fun CatalogScreen(
 
     // --- Данные ---
     val inStockProducts = remember(products) { products.filter { it.inStock } }
+    val outOfStockProducts = remember(products) { products.filter { !it.inStock } }
 
     val popularProducts = remember(inStockProducts) {
         inStockProducts.filter { it.isPopular }
     }
 
     // 5–6 популярных для верхней ленты
-    val popularPreview = remember(popularProducts) { popularProducts.take(6) }
-
+    val popularPreview = remember(popularProducts) { popularProducts.shuffled().take(6) }
     // Категории: сначала "Все", потом остальные
     val categories = remember(inStockProducts) {
         inStockProducts
@@ -601,6 +635,8 @@ fun CatalogScreen(
                 val cat = (selectedFilter as CatalogFilter.Category).category
                 inStockProducts.filter { it.category == cat }
             }
+
+            is CatalogFilter.OutOfStock -> outOfStockProducts
             is CatalogFilter.All -> inStockProducts
         }
 
@@ -684,6 +720,11 @@ fun CatalogScreen(
 
                 onSelectCategory = { cat ->
                     selectedFilter = CatalogFilter.Category(cat)
+                    scope.launch { gridState.animateScrollToItem(2) }
+
+                },
+                onSelectOutOfStock = {
+                    selectedFilter = CatalogFilter.OutOfStock
                     scope.launch { gridState.animateScrollToItem(2) }
                 }
             )
@@ -822,8 +863,8 @@ fun CategoryChipsRow(
     categories: List<ProductCategory>,
     selectedFilter: CatalogFilter,
     onSelectAll: () -> Unit,
-    onSelectCategory: (ProductCategory) -> Unit
-)
+    onSelectCategory: (ProductCategory) -> Unit,
+    onSelectOutOfStock: () -> Unit)
  {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -859,6 +900,15 @@ fun CategoryChipsRow(
                 }
             )
         }
+
+        item {
+            FilterChip(
+                selected = selectedFilter is CatalogFilter.OutOfStock,
+                onClick = onSelectOutOfStock,
+                label = { Text("Нет в наличии") }
+            )
+        }
+
 
     }
 }
@@ -898,6 +948,8 @@ fun CategoryFilterRow(
                     ProductCategory.NUTS -> "Орехи/сухофрукты"
                     ProductCategory.OTHER -> "Другое"
                 }
+
+                CatalogFilter.OutOfStock -> TODO()
             }
 
             val isSelected = when {
@@ -1095,8 +1147,8 @@ fun ProductCardLarge(
             Text(
                 text = product.name,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2
-            )
+                maxLines = 2,
+                modifier = Modifier.heightIn(min = 40.dp)            )
 
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -1108,7 +1160,7 @@ fun ProductCardLarge(
                 Text(
                     text = buildString {
                         append(product.price.toInt())
-                        append(" ")
+                        append(" ₽ / ")
                         append(if (product.unit == UnitType.KG) "кг" else "шт")
                     },
                     style = MaterialTheme.typography.titleMedium,
@@ -1166,7 +1218,10 @@ fun CartScreen(
     val context = LocalContext.current
 
     // Считаем примерную сумму заказа
-    val totalPrice = cartItems.sumOf { it.product.price * it.quantity }
+    val itemsSubtotal = cartItems.sumOf { it.product.price * it.quantity }
+    val isFreeDelivery = itemsSubtotal >= 1500.0
+    val deliveryFee = if (isFreeDelivery) 0.0 else 200.0
+    val paymentDiscountPercent = 0.05
 
 
     // Показывать ли диалог с формой оформления заказа
@@ -1178,6 +1233,7 @@ fun CartScreen(
     var customerPhone by remember { mutableStateOf("") }
     var customerAddress by remember { mutableStateOf("") }
     var customerComment by remember { mutableStateOf("") }
+    var paymentMethod by remember { mutableStateOf(PaymentMethod.CASH) }
 
     // Текст ошибки в диалоге
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -1185,7 +1241,7 @@ fun CartScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
 
         Text(
@@ -1205,9 +1261,16 @@ fun CartScreen(
             }
         } else {
             // Список товаров в корзине
+            val discount = if (paymentMethod == PaymentMethod.CASH) {
+                itemsSubtotal * paymentDiscountPercent
+            } else {
+                0.0
+            }
+            val totalPrice = itemsSubtotal - discount + deliveryFee
             androidx.compose.foundation.lazy.LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f, fill = true)
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
             ) {
                 items(cartItems.size) { index ->
                     val item = cartItems[index]
@@ -1217,41 +1280,82 @@ fun CartScreen(
                         onRemoveFromCart = onRemoveFromCart
                     )
                 }
-            }
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Способ оплаты",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
 
             // Примерная сумма
-            Text(
-                text = "Ориентировочная сумма: ~ ${totalPrice.toInt()} ₽",
-                style = MaterialTheme.typography.titleMedium
-            )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Фактическая сумма может немного отличаться из-за точного веса (+/− ~100 г).",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Кнопка "Оформить заказ" — только открывает диалог с формой
-            Button(
-                onClick = {
-                    if (cartItems.isEmpty()) {
-                        Toast.makeText(
-                            context,
-                            "Корзина пуста.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    } else {
-                        showOrderDialog = true
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = paymentMethod == PaymentMethod.CASH,
+                            onClick = { paymentMethod = PaymentMethod.CASH }
+                        )
+                        Text(PaymentMethod.CASH.label)
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Оформить заказ")
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = paymentMethod == PaymentMethod.CARD,
+                            onClick = { paymentMethod = PaymentMethod.CARD }
+                        )
+                        Text(PaymentMethod.CARD.label)
+                    }
+                }
+
+                item {
+                    Text(
+                        text = "Товары: ${itemsSubtotal.toInt()} ₽",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    if (discount > 0.0) {
+                        Text(
+                            text = "Скидка за наличные: -${discount.toInt()} ₽",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = if (deliveryFee > 0.0) "Доставка: 200 ₽" else "Доставка: бесплатно",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Text(
+                        text = "Итого: ~ ${totalPrice.toInt()} ₽",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Фактическая сумма может немного отличаться из-за точного веса (+/− ~100 г).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    if (!isFreeDelivery) {
+                        val remaining = (1500.0 - itemsSubtotal).coerceAtLeast(0.0)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Добавьте еще ${remaining.toInt()} ₽ для бесплатной доставки.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                item {
+                    Button(
+                        onClick = { showOrderDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Оформить заказ")
+                    }
+                }
             }
         }
     }
@@ -1283,7 +1387,8 @@ fun CartScreen(
                         onValueChange = { customerPhone = it },
                         label = { Text("Телефон") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1296,6 +1401,7 @@ fun CartScreen(
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
+
 
                     OutlinedTextField(
                         value = customerComment,
@@ -1328,12 +1434,23 @@ fun CartScreen(
 
                                     isSendingOrder = true
 
+                                    val discount = if (paymentMethod == PaymentMethod.CASH) {
+                                        itemsSubtotal * paymentDiscountPercent
+                                    } else {
+                                        0.0
+                                    }
+                                    val total = itemsSubtotal - discount + deliveryFee
+
                                     val message = buildOrderMessage(
                                         cartItems = cartItems,
                                         customerName = customerName,
                                         customerPhone = customerPhone,
                                         customerAddress = customerAddress,
-                                        comment = customerComment
+                                        comment = customerComment,
+                                        paymentMethod = paymentMethod,
+                                        deliveryFee = deliveryFee,
+                                        discount = discount,
+                                        total = total
                                     )
 
                                     val order = buildOrderMap(
@@ -1341,7 +1458,11 @@ fun CartScreen(
                                         customerName = customerName,
                                         customerPhone = customerPhone,
                                         customerAddress = customerAddress,
-                                        comment = customerComment
+                                        comment = customerComment,
+                                        paymentMethod = paymentMethod,
+                                        deliveryFee = deliveryFee,
+                                        discount = discount,
+                                        total = total
                                     )
 
                                     sendOrderViaFirebaseTelegram(
@@ -1385,12 +1506,23 @@ fun CartScreen(
                                     errorText = null
                                     isSendingOrder = true
 
+                                    val discount = if (paymentMethod == PaymentMethod.CASH) {
+                                        itemsSubtotal * paymentDiscountPercent
+                                    } else {
+                                        0.0
+                                    }
+                                    val total = itemsSubtotal - discount + deliveryFee
+
                                     val message = buildOrderMessage(
                                         cartItems = cartItems,
                                         customerName = customerName,
                                         customerPhone = customerPhone,
                                         customerAddress = customerAddress,
-                                        comment = customerComment
+                                        comment = customerComment,
+                                        paymentMethod = paymentMethod,
+                                        deliveryFee = deliveryFee,
+                                        discount = discount,
+                                        total = total
                                     )
 
                                     // WhatsApp на твой номер
@@ -1474,13 +1606,24 @@ fun CartItemRow(
                     style = MaterialTheme.typography.bodyMedium   // было titleMedium
                 )
 
-                IconButton(
-                    onClick = { showDialog = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Изменить количество"
-                    )
+                Row {
+                    IconButton(
+                        onClick = { showDialog = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Изменить количество"
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onRemoveFromCart(item.product.id) }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Удалить"
+                        )
+                    }
                 }
             }
 
@@ -1510,18 +1653,6 @@ fun CartItemRow(
                 style = MaterialTheme.typography.bodyMedium
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TextButton(
-                    onClick = { onRemoveFromCart(item.product.id) }
-                ) {
-                    Text("Удалить")
-                }
-            }
         }
     }
 
@@ -1791,7 +1922,8 @@ fun RequestProductScreen() {
             onValueChange = { customerPhone = it },
             label = { Text("Телефон для связи") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -2067,6 +2199,14 @@ fun AdminScreen(
 ) {
     var showEditDialog by remember { mutableStateOf<Product?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredProducts = remember(products, searchQuery) {
+        if (searchQuery.isBlank()) {
+            products
+        } else {
+            products.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -2097,12 +2237,23 @@ fun AdminScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = { Text("Поиск по названию") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            items(products.size) { index ->
-                val product = products[index]
+            items(filteredProducts.size) { index ->
+                val product = filteredProducts[index]
                 AdminProductRow(
                     product = product,
                     onEditClick = { showEditDialog = product },
@@ -2334,7 +2485,11 @@ fun buildOrderMessage(
     customerName: String,
     customerPhone: String,
     customerAddress: String,
-    comment: String
+    comment: String,
+    paymentMethod: PaymentMethod,
+    deliveryFee: Double,
+    discount: Double,
+    total: Double
 ): String {
     val sb = StringBuilder()
 
@@ -2352,15 +2507,21 @@ fun buildOrderMessage(
         sb.append("$lineNumber) ${item.product.name} — ${item.quantity} $unitLabel × ${item.product.price.toInt()} ₽\n")
     }
 
-    val totalPrice = cartItems.sumOf { it.product.price * it.quantity }
+    val subtotal = cartItems.sumOf { it.product.price * it.quantity }
 
-    sb.append("\nОриентировочная сумма: ~ ${totalPrice.toInt()} ₽\n")
+    sb.append("\nТовары: ${subtotal.toInt()} ₽\n")
+    if (discount > 0.0) {
+        sb.append("Скидка за наличные: -${discount.toInt()} ₽\n")
+    }
+    sb.append(if (deliveryFee > 0.0) "Доставка: 200 ₽\n" else "Доставка: бесплатно\n")
+    sb.append("Итого: ~ ${total.toInt()} ₽\n")
     sb.append("(Фактическая сумма может немного отличаться из-за точного веса товара)\n\n")
 
     sb.append("Данные клиента:\n")
     sb.append("Имя: $customerName\n")
     sb.append("Телефон: $customerPhone\n")
     sb.append("Адрес: $customerAddress\n")
+    sb.append("Оплата: ${paymentMethod.label}\n")
 
     if (comment.isNotBlank()) {
         sb.append("Комментарий: $comment\n")
@@ -2375,7 +2536,11 @@ fun buildOrderMap(
     customerName: String,
     customerPhone: String,
     customerAddress: String,
-    comment: String
+    comment: String,
+    paymentMethod: PaymentMethod,
+    deliveryFee: Double,
+    discount: Double,
+    total: Double
 ): Map<String, Any> {
     val items = cartItems.map { item ->
         mapOf(
@@ -2388,7 +2553,7 @@ fun buildOrderMap(
         )
     }
 
-    val total = cartItems.sumOf { it.product.price * it.quantity }
+    val subtotal = cartItems.sumOf { it.product.price * it.quantity }
 
     return mapOf(
         "type" to "ORDER",
@@ -2397,6 +2562,10 @@ fun buildOrderMap(
         "customerPhone" to customerPhone,
         "customerAddress" to customerAddress,
         "comment" to comment,
+        "paymentMethod" to paymentMethod.name,
+        "deliveryFee" to deliveryFee,
+        "discount" to discount,
+        "subtotal" to subtotal,
         "total" to total,
         "items" to items
     )
