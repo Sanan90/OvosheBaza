@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
 import com.google.firebase.firestore.DocumentSnapshot
 
 import androidx.compose.foundation.text.KeyboardOptions
@@ -90,7 +91,12 @@ import com.example.ovoshebaza.ui.theme.VeggieTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Brush
 
-import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.ui.res.painterResource
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.unit.lerp
+import kotlinx.coroutines.delay
+
 
 
 // Главная Activity — точка входа в приложение
@@ -132,7 +138,26 @@ fun VeggieShopApp() {
     var supportQuestion by remember { mutableStateOf("") }
     var supportPhone by remember { mutableStateOf("") }
     var supportError by remember { mutableStateOf<String?>(null) }
+    val helperIconRes = remember {
+        listOf(
+            R.drawable.helper,
+            R.drawable.helper2,
+            R.drawable.helper3,
+            R.drawable.helper4
+        ).random()
+    }
+    val supportIconOffset = remember { Animatable(0f) }
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            repeat(3) {
+                supportIconOffset.animateTo(1f, animationSpec = tween(durationMillis = 280))
+                supportIconOffset.animateTo(0f, animationSpec = tween(durationMillis = 280))
+                delay(120)
+            }
+            delay(15_000)
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -267,27 +292,27 @@ fun VeggieShopApp() {
                 }
             )
 
-            SmallFloatingActionButton(
-                onClick = {
-                    showSupportDialog = true
-                    supportQuestion = ""
-                    supportPhone = ""
-                    supportError = null
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(
                         end = 20.dp,
-                        bottom = innerPadding.calculateBottomPadding() + 16.dp
+                        bottom = innerPadding.calculateBottomPadding() + 0.dp
                     )
+                    .size(75.dp)
+                    .offset(y = lerp(0.dp, (-6).dp, supportIconOffset.value))
+                    .clickable {
+                        showSupportDialog = true
+                        supportQuestion = ""
+                        supportPhone = ""
+                        supportError = null
+                    },
+                contentAlignment = Alignment.Center
 
             ) {
-                Icon(
-                    imageVector = Icons.Default.SupportAgent,
-                    contentDescription = "Связь с поддержкой"
-                )
+                Image(
+                    painter = painterResource(id = helperIconRes),                    contentDescription = "Связь с поддержкой",
+                    modifier = Modifier.size(125.dp)                )
             }
         }
     }
@@ -1103,14 +1128,12 @@ fun ProductCardLarge(
                 }
             }
 
-            product.originCountry?.let { country ->
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    country,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = product.originCountry ?: " ",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 
