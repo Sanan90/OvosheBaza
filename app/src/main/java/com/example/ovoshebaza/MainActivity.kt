@@ -101,6 +101,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.text.font.FontWeight
 
 
 
@@ -184,6 +186,19 @@ fun VeggieShopApp() {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
+            val topBarBrush = Brush.verticalGradient(
+                colors = listOf(
+                    MaterialTheme.colorScheme.primary,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                )
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(topBarBrush)
+            ) {
                 CenterAlignedTopAppBar(
                     title = {
                         Row(
@@ -192,43 +207,51 @@ fun VeggieShopApp() {
                             val noRippleInteraction = remember { MutableInteractionSource() }
 
 
-                                Column(
-                                    modifier = Modifier.clickable(
-                                        interactionSource = noRippleInteraction,
-                                        indication = null
-                                    ) {
+                            Column(
+                                modifier = Modifier.clickable(
+                                    interactionSource = noRippleInteraction,
+                                    indication = null
+                                ) {
 
-                                        logoClickCount++
+                                    logoClickCount++
 
-                                        if (logoClickCount >= 7) {
-                                            logoClickCount = 0
-                                            // показываем диалог ввода PIN
-                                            showAdminPinDialog = true
-                                            adminPin = ""
-                                            adminPinError = null
-                                        }
+                                    if (logoClickCount >= 7) {
+                                        logoClickCount = 0
+                                        // показываем диалог ввода PIN
+                                        showAdminPinDialog = true
+                                        adminPin = ""
+                                        adminPinError = null
                                     }
+                                }
                             ) {
-                                Text(
-                                    text = "🍎 Овощная база",
-                                    style = MaterialTheme.typography.titleLarge
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "🍎 Овощная база",
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    )
+                                }
                                 Text(
                                     text = "свежие продукты каждый день",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
                                 )
                             }
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
+                        containerColor = Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 )
+            }
         },
         bottomBar = {
-
+            if (currentRoute != Screen.Admin.route) {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
@@ -286,9 +309,10 @@ fun VeggieShopApp() {
                                         imageVector = icon,
                                         contentDescription = screen.label
                                     )
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -667,104 +691,118 @@ fun CatalogScreen(
         else base.filter { it.name.contains(searchQuery, ignoreCase = true) }
     }
 
-    LazyVerticalGrid(
-        state = gridState,
-        columns = GridCells.Fixed(2),
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(bottom = 24.dp, top = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.background
+                    )
+                )
+            )
     ) {
+        LazyVerticalGrid(
+            state = gridState,
+            columns = GridCells.Fixed(2),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(bottom = 24.dp, top = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
 
-        // ---------- 1) Популярные сверху (лента) ----------
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            if (popularPreview.isNotEmpty()) {
-                PopularRow(
-                    items = popularPreview,
-                    onOpenDetails = onOpenDetails,
-                    onOpenAllPopular = {
-                        selectedFilter = CatalogFilter.Popular
-                        // прокрутим к началу каталога (чтобы видеть результаты)
-                        scope.launch {
-                            gridState.animateScrollToItem(2) // примерно туда, где начинается сетка
+            // ---------- 1) Популярные сверху (лента) ----------
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                if (popularPreview.isNotEmpty()) {
+                    PopularRow(
+                        items = popularPreview,
+                        onOpenDetails = onOpenDetails,
+                        onOpenAllPopular = {
+                            selectedFilter = CatalogFilter.Popular
+                            // прокрутим к началу каталога (чтобы видеть результаты)
+                            scope.launch {
+                                gridState.animateScrollToItem(2) // примерно туда, где начинается сетка
+                            }
                         }
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+            }
+
+            // ---------- 2) Поиск ----------
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Поиск по названию") },
+                        singleLine = true,
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null
+                            )
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            // ---------- 3) Категории: сначала Все, потом остальные ----------
+            // (Если хочешь “липкую” строку категорий — скажи, включим stickyHeader)
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CategoryChipsRow(
+                    categories = categories,
+                    selectedFilter = selectedFilter,
+                    onSelectAll = {
+                        selectedFilter = CatalogFilter.All
+                        scope.launch { gridState.animateScrollToItem(2) }
+                    },
+
+                    onSelectCategory = { cat ->
+                        selectedFilter = CatalogFilter.Category(cat)
+                        scope.launch { gridState.animateScrollToItem(2) }
+
+                    },
+                    onSelectOutOfStock = {
+                        selectedFilter = CatalogFilter.OutOfStock
+                        scope.launch { gridState.animateScrollToItem(2) }
                     }
                 )
-            } else {
-                Spacer(modifier = Modifier.height(6.dp))
             }
-        }
 
-        // ---------- 2) Поиск ----------
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Поиск по названию") },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null
-                        )
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+            // ---------- 4) Сетка товаров ----------
+            items(filteredProducts, key = { it.id }) { product ->
+                ProductCardLarge(
+                    product = product,
+                    onAddToCart = onAddToCart,
+                    onOpenDetails = { onOpenDetails(product) }
                 )
             }
-        }
 
-        // ---------- 3) Категории: сначала Все, потом остальные ----------
-        // (Если хочешь “липкую” строку категорий — скажи, включим stickyHeader)
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            CategoryChipsRow(
-                categories = categories,
-                selectedFilter = selectedFilter,
-                onSelectAll = {
-                    selectedFilter = CatalogFilter.All
-                    scope.launch { gridState.animateScrollToItem(2) }
-                },
-
-                onSelectCategory = { cat ->
-                    selectedFilter = CatalogFilter.Category(cat)
-                    scope.launch { gridState.animateScrollToItem(2) }
-
-                },
-                onSelectOutOfStock = {
-                    selectedFilter = CatalogFilter.OutOfStock
-                    scope.launch { gridState.animateScrollToItem(2) }
-                }
-            )
-        }
-
-        // ---------- 4) Сетка товаров ----------
-        items(filteredProducts, key = { it.id }) { product ->
-            ProductCardLarge(
-                product = product,
-                onAddToCart = onAddToCart,
-                onOpenDetails = { onOpenDetails(product) }
-            )
-        }
-
-        // низ отступ
-        item(span = { GridItemSpan(maxLineSpan) }) {
-            Spacer(modifier = Modifier.height(20.dp))
+            // низ отступ
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Spacer(modifier = Modifier.height(20.dp))
+            }
         }
     }
 }
@@ -788,7 +826,10 @@ fun PopularRow(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Популярные", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Популярные",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
 
             TextButton(onClick = onOpenAllPopular) {
                 Text("Все популярные")
@@ -829,7 +870,7 @@ fun PopularMiniCard(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column {
             // --- Фото ---
@@ -842,12 +883,26 @@ fun PopularMiniCard(
                 val url = product.imageUrl
 
                 if (!url.isNullOrBlank()) {
-                    AsyncImage(
-                        model = url,
-                        contentDescription = product.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box {
+                        AsyncImage(
+                            model = url,
+                            contentDescription = product.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.18f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -898,7 +953,11 @@ fun CategoryChipsRow(
             FilterChip(
                 selected = selectedFilter is CatalogFilter.All,
                 onClick = onSelectAll,
-                label = { Text("Все") }
+                label = { Text("Все") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                )
             )
         }
 
@@ -912,15 +971,19 @@ fun CategoryChipsRow(
                 label = {
                     Text(
                         when (cat) {
-                            ProductCategory.VEGETABLES -> "Овощи"
-                            ProductCategory.FRUITS -> "Фрукты"
-                            ProductCategory.BERRIES -> "Ягоды"
-                            ProductCategory.GREENS -> "Зелень"
-                            ProductCategory.NUTS -> "Орехи / сухофрукты"
-                            ProductCategory.OTHER -> "Другое"
+                            ProductCategory.VEGETABLES -> "🥕 Овощи"
+                            ProductCategory.FRUITS -> "🍊 Фрукты"
+                            ProductCategory.BERRIES -> "🍓 Ягоды"
+                            ProductCategory.GREENS -> "🌿 Зелень"
+                            ProductCategory.NUTS -> "🥜 Орехи / сухофрукты"
+                            ProductCategory.OTHER -> "✨ Другое"
                         }
                     )
-                }
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
 
@@ -928,7 +991,11 @@ fun CategoryChipsRow(
             FilterChip(
                 selected = selectedFilter is CatalogFilter.OutOfStock,
                 onClick = onSelectOutOfStock,
-                label = { Text("Нет в наличии") }
+                label = { Text("Нет в наличии") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
             )
         }
 
@@ -1134,11 +1201,11 @@ fun ProductCardLarge(
             .fillMaxWidth()
             .heightIn(min = 220.dp)
             .clickable { onOpenDetails() }, // ✅ клик по карточке → детали
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
 
@@ -1149,12 +1216,26 @@ fun ProductCardLarge(
                     .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
             ) {
                 if (product.imageUrl != null) {
-                    AsyncImage(
-                        model = product.imageUrl,
-                        contentDescription = product.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    Box {
+                        AsyncImage(
+                            model = product.imageUrl,
+                            contentDescription = product.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            Color.Black.copy(alpha = 0.16f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
                 } else {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -1163,7 +1244,11 @@ fun ProductCardLarge(
                         Text("Фото", style = MaterialTheme.typography.bodySmall)
                     }
                 }
+
+
             }
+
+
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1180,15 +1265,21 @@ fun ProductCardLarge(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = buildString {
-                        append(product.price.toInt())
-                        append(" ₽ / ")
-                        append(if (product.unit == UnitType.KG) "кг" else "шт")
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Text(
+                        text = buildString {
+                            append(product.price.toInt())
+                            append(" ₽ / ")
+                            append(if (product.unit == UnitType.KG) "кг" else "шт")
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
 
                 // ✅ чтобы клик по корзине НЕ открывал детали:
                 FilledTonalIconButton(
@@ -2265,50 +2356,41 @@ fun AdminScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
 
-        Text(
-            text = "Админ-панель",
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Здесь можно изменить товары, цены, единицы, популярность и наличие.",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = { showAddDialog = true },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Добавить новый товар")
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            label = { Text("Поиск по названию") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 88.dp),
             modifier = Modifier.fillMaxSize()
         ) {
+            item {
+                Text(
+                    text = "Админ-панель",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+
+
+            item {
+                Text(
+                    text = "Здесь можно изменить товары, цены, единицы, популярность и наличие.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Поиск по названию") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
             items(filteredProducts.size) { index ->
                 val product = filteredProducts[index]
                 AdminProductRow(
@@ -2319,6 +2401,14 @@ fun AdminScreen(
                     }
                 )
             }
+        }
+        Button(
+            onClick = { showAddDialog = true },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        ) {
+            Text("Добавить новый товар")
         }
     }
 
@@ -2373,85 +2463,29 @@ fun AdminProductRow(
         UnitType.PIECE -> "шт"
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEditClick() }
+    ) {
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(12.dp)
         ) {
+            Text(
+                text = product.name,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            )
 
-            // Левая часть (вся инфа)
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = product.name,
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Spacer(modifier = Modifier.height(6.dp))
 
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // ✅ Цена кликабельна -> быстрый ввод
-                Text(
-                    text = "Цена: ${product.price.toInt()} ₽ / $unitLabel",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.clickable { showPriceDialog = true }
-                )
-
-                product.originCountry?.let { country ->
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Страна: $country",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "Категория: " + when (product.category) {
-                        ProductCategory.VEGETABLES -> "Овощи"
-                        ProductCategory.FRUITS -> "Фрукты"
-                        ProductCategory.BERRIES -> "Ягоды"
-                        ProductCategory.GREENS -> "Зелень"
-                        ProductCategory.NUTS -> "Орехи/сухофрукты"
-                        ProductCategory.OTHER -> "Другое"
-                    },
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                product.description?.takeIf { it.isNotBlank() }?.let { description ->
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Описание: $description",
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "Популярный: ${if (product.isPopular) "да" else "нет"}, в наличии: ${if (product.inStock) "да" else "нет"}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = "Нажмите на цену, чтобы быстро изменить.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Правая часть: кнопка "Изменить" напротив данных
-            TextButton(onClick = onEditClick) {
-                Text("Изменить")
-            }
+            // ✅ Цена кликабельна -> быстрый ввод
+            Text(
+                text = "${product.price.toInt()} ₽ / $unitLabel",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.clickable { showPriceDialog = true }
+            )
         }
     }
 
