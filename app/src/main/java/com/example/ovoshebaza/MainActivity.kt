@@ -103,7 +103,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.ui.text.font.FontWeight
-
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 
 // Главная Activity — точка входа в приложение
@@ -116,9 +118,43 @@ class MainActivity : ComponentActivity() {
         setContent {
             // Можно потом сделать свою тему, пока используем Material3 по умолчанию
             VeggieTheme {
-                VeggieShopApp()
+                AppRoot()
             }
+
         }
+    }
+}
+
+@Composable
+fun AppRoot() {
+    val auth = remember { FirebaseAuth.getInstance() }
+    var user by remember { mutableStateOf(auth.currentUser) }
+
+    DisposableEffect(auth) {
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            user = firebaseAuth.currentUser
+        }
+        auth.addAuthStateListener(listener)
+        onDispose { auth.removeAuthStateListener(listener) }
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (user == null) {
+        AuthScreen(
+            onSignedIn = {
+                ensureUserDocExists(
+                    onDone = { /* ничего не нужно */ },
+                    onError = { msg ->
+                        android.widget.Toast
+                            .makeText(context, msg, android.widget.Toast.LENGTH_LONG)
+                            .show()
+                    }
+                )
+            }
+        )
+    } else {
+        VeggieShopApp()
     }
 }
 
@@ -648,15 +684,12 @@ fun CatalogScreen(
     onAddToCart: (Product, Double) -> Unit,
     onOpenDetails: (Product) -> Unit
 ) {
-    // Фильтр: All / Category / Popular (как у тебя уже сделано)
     var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.All) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Состояние грида (чтобы при нажатии "Все популярные" прокрутить вверх)
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
-    // --- Данные ---
     val inStockProducts = remember(products) { products.filter { it.inStock } }
     val outOfStockProducts = remember(products) { products.filter { !it.inStock } }
 
@@ -666,7 +699,8 @@ fun CatalogScreen(
 
     // 5–6 популярных для верхней ленты
     val popularPreview = remember(popularProducts) { popularProducts.shuffled().take(6) }
-    // Категории: сначала "Все", потом остальные
+
+    // категории из товаров "в наличии"
     val categories = remember(inStockProducts) {
         inStockProducts
             .mapNotNull { it.category }
@@ -674,15 +708,13 @@ fun CatalogScreen(
             .sorted()
     }
 
-    // Фильтрация каталога
-    val filteredProducts = remember(selectedFilter, searchQuery, inStockProducts) {
+    val filteredProducts = remember(selectedFilter, searchQuery, inStockProducts, outOfStockProducts) {
         val base = when (selectedFilter) {
             is CatalogFilter.Popular -> inStockProducts.filter { it.isPopular }
             is CatalogFilter.Category -> {
                 val cat = (selectedFilter as CatalogFilter.Category).category
                 inStockProducts.filter { it.category == cat }
             }
-
             is CatalogFilter.OutOfStock -> outOfStockProducts
             is CatalogFilter.All -> inStockProducts
         }
@@ -715,7 +747,7 @@ fun CatalogScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
-            // ---------- 1) Популярные сверху (лента) ----------
+            // 1) Популярные сверху (лента)
             item(span = { GridItemSpan(maxLineSpan) }) {
                 if (popularPreview.isNotEmpty()) {
                     PopularRow(
@@ -723,9 +755,8 @@ fun CatalogScreen(
                         onOpenDetails = onOpenDetails,
                         onOpenAllPopular = {
                             selectedFilter = CatalogFilter.Popular
-                            // прокрутим к началу каталога (чтобы видеть результаты)
                             scope.launch {
-                                gridState.animateScrollToItem(2) // примерно туда, где начинается сетка
+                                gridState.animateScrollToItem(2)
                             }
                         }
                     )
@@ -734,27 +765,27 @@ fun CatalogScreen(
                 }
             }
 
-            // ---------- 2) Поиск ----------
+            // 2) Поиск
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(
+                ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
+                    shape = RoundedCornerShape(18.dp),
+                    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+                    colors = CardDefaults.elevatedCardColors(
                         containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    )
                 ) {
                     TextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         placeholder = { Text("Поиск по названию") },
-                        singleLine = true,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = null
                             )
                         },
+                        singleLine = true,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
@@ -767,8 +798,7 @@ fun CatalogScreen(
                 }
             }
 
-            // ---------- 3) Категории: сначала Все, потом остальные ----------
-            // (Если хочешь “липкую” строку категорий — скажи, включим stickyHeader)
+            // 3) Категории + Нет в наличии (без "Популярные")
             item(span = { GridItemSpan(maxLineSpan) }) {
                 CategoryChipsRow(
                     categories = categories,
@@ -777,11 +807,9 @@ fun CatalogScreen(
                         selectedFilter = CatalogFilter.All
                         scope.launch { gridState.animateScrollToItem(2) }
                     },
-
                     onSelectCategory = { cat ->
                         selectedFilter = CatalogFilter.Category(cat)
                         scope.launch { gridState.animateScrollToItem(2) }
-
                     },
                     onSelectOutOfStock = {
                         selectedFilter = CatalogFilter.OutOfStock
@@ -790,7 +818,7 @@ fun CatalogScreen(
                 )
             }
 
-            // ---------- 4) Сетка товаров ----------
+            // 4) Сетка товаров
             items(filteredProducts, key = { it.id }) { product ->
                 ProductCardLarge(
                     product = product,
@@ -799,13 +827,13 @@ fun CatalogScreen(
                 )
             }
 
-            // низ отступ
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
         }
     }
 }
+
 
 
 
@@ -942,13 +970,14 @@ fun CategoryChipsRow(
     selectedFilter: CatalogFilter,
     onSelectAll: () -> Unit,
     onSelectCategory: (ProductCategory) -> Unit,
-    onSelectOutOfStock: () -> Unit)
- {
+    onSelectOutOfStock: () -> Unit
+) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
+        // Все (в наличии)
         item {
             FilterChip(
                 selected = selectedFilter is CatalogFilter.All,
@@ -961,8 +990,7 @@ fun CategoryChipsRow(
             )
         }
 
-
-
+        // Категории (в наличии)
         items(categories) { cat ->
             FilterChip(
                 selected = selectedFilter is CatalogFilter.Category &&
@@ -987,6 +1015,7 @@ fun CategoryChipsRow(
             )
         }
 
+        // Нет в наличии
         item {
             FilterChip(
                 selected = selectedFilter is CatalogFilter.OutOfStock,
@@ -998,19 +1027,22 @@ fun CategoryChipsRow(
                 )
             )
         }
-
-
     }
 }
 
 
+
+
 // Ряд кнопок-фильтров: Популярные, Овощи, Фрукты, ... , Все
+// Ряд кнопок-фильтров (старый вариант). Сейчас в каталоге используется CategoryChipsRow.
+// Оставляем, чтобы не мешал, но убираем TODO(), чтобы не было риска краша.
 @Composable
 fun CategoryFilterRow(
     selectedFilter: CatalogFilter,
     onFilterSelected: (CatalogFilter) -> Unit
 ) {
     val filters = listOf<CatalogFilter>(
+        CatalogFilter.All,
         CatalogFilter.Popular,
         CatalogFilter.Category(ProductCategory.VEGETABLES),
         CatalogFilter.Category(ProductCategory.FRUITS),
@@ -1018,7 +1050,7 @@ fun CategoryFilterRow(
         CatalogFilter.Category(ProductCategory.GREENS),
         CatalogFilter.Category(ProductCategory.NUTS),
         CatalogFilter.Category(ProductCategory.OTHER),
-        CatalogFilter.All
+        CatalogFilter.OutOfStock
     )
 
     LazyRow(
@@ -1038,13 +1070,13 @@ fun CategoryFilterRow(
                     ProductCategory.NUTS -> "Орехи/сухофрукты"
                     ProductCategory.OTHER -> "Другое"
                 }
-
-                CatalogFilter.OutOfStock -> TODO()
+                is CatalogFilter.OutOfStock -> "Нет в наличии"
             }
 
             val isSelected = when {
                 selectedFilter is CatalogFilter.Popular && filter is CatalogFilter.Popular -> true
                 selectedFilter is CatalogFilter.All && filter is CatalogFilter.All -> true
+                selectedFilter is CatalogFilter.OutOfStock && filter is CatalogFilter.OutOfStock -> true
                 selectedFilter is CatalogFilter.Category && filter is CatalogFilter.Category &&
                         selectedFilter.category == filter.category -> true
                 else -> false
@@ -1058,6 +1090,7 @@ fun CategoryFilterRow(
         }
     }
 }
+
 
 
 @Composable
@@ -1349,6 +1382,27 @@ fun CartScreen(
     var customerComment by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf(PaymentMethod.CASH) }
 
+    LaunchedEffect(showOrderDialog) {
+        if (!showOrderDialog) return@LaunchedEffect
+
+        // 1) Телефон из авторизации (если поле пустое)
+        val authPhone = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.phoneNumber
+        if (customerPhone.isBlank() && !authPhone.isNullOrBlank()) {
+            customerPhone = authPhone
+        }
+
+        // 2) Имя/адрес из Firestore (только если поля пустые)
+        loadUserProfile(
+            onResult = { profile ->
+                if (profile == null) return@loadUserProfile
+                if (customerName.isBlank() && profile.name.isNotBlank()) customerName = profile.name
+                if (customerAddress.isBlank() && profile.address.isNotBlank()) customerAddress = profile.address
+                if (customerPhone.isBlank() && profile.phone.isNotBlank()) customerPhone = profile.phone
+            }
+        )
+    }
+
+
     // Текст ошибки в диалоге
     var errorText by remember { mutableStateOf<String?>(null) }
 
@@ -1541,8 +1595,12 @@ fun CartScreen(
                             // проверка полей (как у тебя)
                             when {
                                 customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
-                                customerPhone.isBlank() -> errorText = "Пожалуйста, укажите телефон."
-                                customerAddress.isBlank() -> errorText = "Пожалуйста, укажите адрес доставки."
+                                customerPhone.isBlank() -> errorText =
+                                    "Пожалуйста, укажите телефон."
+
+                                customerAddress.isBlank() -> errorText =
+                                    "Пожалуйста, укажите адрес доставки."
+
                                 else -> {
                                     errorText = null
 
@@ -1579,12 +1637,20 @@ fun CartScreen(
                                         total = total
                                     )
 
+
+
                                     sendOrderViaFirebaseTelegram(
                                         context = context,
                                         order = order,
                                         onSuccess = {
+                                            saveOrderToHistory(order, "TELEGRAM")
+
                                             isSendingOrder = false
-                                            Toast.makeText(context, "Заказ отправлен в Telegram ✅", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(
+                                                context,
+                                                "Заказ отправлен в Telegram ✅",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                             showOrderDialog = false
 
                                             // (по желанию) очистка полей после успешной отправки:
@@ -1595,14 +1661,17 @@ fun CartScreen(
                                         },
                                         onError = { err ->
                                             isSendingOrder = false
-                                            Toast.makeText(context, "Ошибка отправки: $err", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(
+                                                context,
+                                                "Ошибка отправки: $err",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                         }
                                     )
 
                                 }
                             }
-                        }
-                        ,
+                        },
                         enabled = !isSendingOrder
                     ) {
                         Text("Telegram")
@@ -1614,8 +1683,12 @@ fun CartScreen(
                         onClick = {
                             when {
                                 customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
-                                customerPhone.isBlank() -> errorText = "Пожалуйста, укажите телефон."
-                                customerAddress.isBlank() -> errorText = "Пожалуйста, укажите адрес доставки."
+                                customerPhone.isBlank() -> errorText =
+                                    "Пожалуйста, укажите телефон."
+
+                                customerAddress.isBlank() -> errorText =
+                                    "Пожалуйста, укажите адрес доставки."
+
                                 else -> {
                                     errorText = null
                                     isSendingOrder = true
@@ -1625,6 +1698,7 @@ fun CartScreen(
                                     } else {
                                         0.0
                                     }
+
                                     val total = itemsSubtotal - discount + deliveryFee
 
                                     val message = buildOrderMessage(
@@ -1639,22 +1713,47 @@ fun CartScreen(
                                         total = total
                                     )
 
-                                    // WhatsApp на твой номер
+                                    // ✅ 1) Собираем orderMap (как для Telegram)
+                                    val order = buildOrderMap(
+                                        cartItems = cartItems,
+                                        customerName = customerName,
+                                        customerPhone = customerPhone,
+                                        customerAddress = customerAddress,
+                                        comment = customerComment,
+                                        paymentMethod = paymentMethod,
+                                        deliveryFee = deliveryFee,
+                                        discount = discount,
+                                        total = total
+                                    )
+
+                                    // ✅ 2) Сохраняем профиль пользователя (имя/телефон/адрес)
+                                    saveUserProfileFromOrder(
+                                        name = customerName,
+                                        phone = customerPhone,
+                                        address = customerAddress
+                                    )
+
+                                    // ✅ 3) Сохраняем заказ в историю
+                                    saveOrderToHistory(order, "WHATSAPP")
+
+                                    // ✅ 4) Отправляем в WhatsApp (как раньше)
                                     sendOrderViaWhatsApp(context, message, "+79687008070")
 
                                     showOrderDialog = false
                                     isSendingOrder = false
+
+                                    // Не очищаем имя/телефон/адрес — они должны остаться для следующего заказа
+                                    customerComment = ""
                                 }
                             }
-                        }
-                        ,
+                        },
                         enabled = !isSendingOrder
                     ) {
                         Text("WhatsApp")
                     }
                 }
             }
-            ,
+                    ,
             dismissButton = {
                 TextButton(
                     onClick = {
@@ -2777,6 +2876,52 @@ fun DocumentSnapshot.toProduct(): Product? {
     )
 }
 
+
+
+fun ensureUserDocExists(
+    onDone: () -> Unit = {},
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    val db = FirebaseFirestore.getInstance()
+    val ref = db.collection("users").document(user.uid)
+    val now = System.currentTimeMillis()
+    val phone = user.phoneNumber ?: ""
+
+    // Транзакция: чтобы createdAt не перетирался и пустые поля не ломали существующие
+    db.runTransaction { tr ->
+        val snap = tr.get(ref)
+
+        if (!snap.exists()) {
+            // создаём нового с пустыми полями
+            val data = mapOf(
+                "name" to "",
+                "address" to "",
+                "phone" to phone,
+                "createdAt" to now,
+                "updatedAt" to now
+            )
+            tr.set(ref, data, SetOptions.merge())
+        } else {
+            // пользователь уже был — только обновляем phone/updatedAt
+            val data = mapOf(
+                "phone" to phone,
+                "updatedAt" to now
+            )
+            tr.set(ref, data, SetOptions.merge())
+        }
+        null
+    }.addOnSuccessListener {
+        onDone()
+    }.addOnFailureListener { e ->
+        onError(e.message ?: "Не удалось создать пользователя в базе")
+    }
+}
 
 
 

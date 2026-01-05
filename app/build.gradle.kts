@@ -58,6 +58,8 @@ android {
 
 dependencies {
 
+    implementation("com.google.firebase:firebase-auth-ktx")
+
     // 🔹 библиотека для загрузки изображений в Compose
     implementation("io.coil-kt:coil-compose:2.7.0")
 
