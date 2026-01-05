@@ -1,13 +1,34 @@
 package com.example.ovoshebaza
 
+
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Query
 
 data class UserProfile(
     val name: String = "",
     val phone: String = "",
-    val address: String = ""
+    val addresses: List<String> = emptyList(),
+    val lastAddress: String = ""
+)
+
+data class OrderItem(
+    val id: String,
+    val name: String,
+    val quantity: Double,
+    val unit: String,
+    val price: Double,
+    val sum: Double
+)
+
+data class OrderSummary(
+    val orderId: String,
+    val createdAt: Long,
+    val total: Double,
+    val itemsCount: Int,
+    val channel: String,
+    val items: List<OrderItem>
 )
 
 fun loadUserProfile(
@@ -29,17 +50,212 @@ fun loadUserProfile(
                 onResult(null)
                 return@addOnSuccessListener
             }
+            val storedAddress = (doc.getString("address") ?: "").trim()
+            val addresses = (doc.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
+                ?.filter { it.isNotBlank() }
+                ?.distinct()
+                ?: emptyList()
+            val mergedAddresses = if (storedAddress.isNotBlank() && !addresses.contains(storedAddress)) {
+                addresses + storedAddress
+            } else {
+                addresses
+            }
+            val lastAddress = (doc.getString("lastAddress") ?: "").trim().ifBlank {
+                storedAddress.ifBlank { mergedAddresses.lastOrNull().orEmpty() }
+            }
+
             onResult(
                 UserProfile(
                     name = (doc.getString("name") ?: "").trim(),
                     phone = (doc.getString("phone") ?: "").trim(),
-                    address = (doc.getString("address") ?: "").trim()
+                    addresses = mergedAddresses,
+                    lastAddress = lastAddress
                 )
             )
         }
         .addOnFailureListener { e ->
             onError(e.message ?: "Не удалось загрузить профиль")
         }
+}
+
+fun loadUserOrders(
+    limit: Int = 10,
+    onResult: (List<OrderSummary>) -> Unit,
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onResult(emptyList())
+        return
+    }
+
+    FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+        .collection("orders")
+        .orderBy("createdAt", Query.Direction.DESCENDING)
+        .limit(limit.toLong())
+        .get()
+        .addOnSuccessListener { snapshot ->
+            val orders = snapshot.documents.map { doc ->
+                val createdAt = doc.getLong("createdAt") ?: 0L
+                val total = doc.getDouble("total") ?: 0.0
+                val rawItems = doc.get("items") as? List<*>
+                val items = rawItems?.mapNotNull { entry ->
+                    val map = entry as? Map<*, *> ?: return@mapNotNull null
+                    val id = map["id"]?.toString() ?: return@mapNotNull null
+                    val name = map["name"]?.toString() ?: "Товар"
+                    val quantity = (map["quantity"] as? Number)?.toDouble() ?: 0.0
+                    val unit = map["unit"]?.toString() ?: ""
+                    val price = (map["price"] as? Number)?.toDouble() ?: 0.0
+                    val sum = (map["sum"] as? Number)?.toDouble() ?: 0.0
+                    OrderItem(
+                        id = id,
+                        name = name,
+                        quantity = quantity,
+                        unit = unit,
+                        price = price,
+                        sum = sum
+                    )
+                } ?: emptyList()
+                val itemsCount = items.size
+                val channel = doc.getString("channel") ?: ""
+
+                OrderSummary(
+                    orderId = doc.id,
+                    createdAt = createdAt,
+                    total = total,
+                    itemsCount = itemsCount,
+                    channel = channel,
+                    items = items
+                )
+            }
+            onResult(orders)
+        }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось загрузить список заказов")
+        }
+}
+
+    fun saveUserName(
+name: String,
+onDone: () -> Unit = {},
+onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    val data = mapOf(
+        "name" to name.trim(),
+        "updatedAt" to System.currentTimeMillis()
+    )
+
+    FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+        .set(data, SetOptions.merge())
+        .addOnSuccessListener { onDone() }
+        .addOnFailureListener { e -> onError(e.message ?: "Не удалось сохранить профиль") }
+}
+
+fun addUserAddress(
+    address: String,
+    onDone: () -> Unit = {},
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    val trimmed = address.trim()
+    if (trimmed.isBlank()) {
+        onDone()
+        return
+    }
+
+    val ref = FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+
+    FirebaseFirestore.getInstance().runTransaction { tr ->
+        val snap = tr.get(ref)
+        val storedAddress = (snap.getString("address") ?: "").trim()
+        val addresses = (snap.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?: emptyList()
+        val updatedAddresses = buildList {
+            addAll(addresses)
+            if (storedAddress.isNotBlank() && !contains(storedAddress)) {
+                add(storedAddress)
+            }
+            if (trimmed.isNotBlank() && !contains(trimmed)) {
+                add(trimmed)
+            }
+        }
+        tr.set(
+            ref,
+            mapOf(
+                "addresses" to updatedAddresses,
+                "lastAddress" to trimmed,
+                "updatedAt" to System.currentTimeMillis()
+            ),
+            SetOptions.merge()
+        )
+        null
+    }.addOnSuccessListener { onDone() }
+        .addOnFailureListener { e -> onError(e.message ?: "Не удалось сохранить адрес") }
+}
+
+fun deleteUserAddress(
+    address: String,
+    onDone: (List<String>, String) -> Unit = { _, _ -> },
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    val trimmed = address.trim()
+    val ref = FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+
+    FirebaseFirestore.getInstance().runTransaction { tr ->
+        val snap = tr.get(ref)
+        val addresses = (snap.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?: emptyList()
+        val updatedAddresses = addresses.filterNot { it == trimmed }
+        val lastAddress = (snap.getString("lastAddress") ?: "").trim()
+        val updatedLastAddress = if (lastAddress == trimmed) {
+            updatedAddresses.lastOrNull().orEmpty()
+        } else {
+            lastAddress
+        }
+        tr.set(
+            ref,
+            mapOf(
+                "addresses" to updatedAddresses,
+                "lastAddress" to updatedLastAddress,
+                "updatedAt" to System.currentTimeMillis()
+            ),
+            SetOptions.merge()
+        )
+        updatedAddresses to updatedLastAddress
+    }.addOnSuccessListener { (updated, last) ->
+        onDone(updated, last)
+    }.addOnFailureListener { e ->
+        onError(e.message ?: "Не удалось удалить адрес")
+    }
 }
 
 fun saveUserProfileFromOrder(
@@ -56,18 +272,42 @@ fun saveUserProfileFromOrder(
     }
 
     val now = System.currentTimeMillis()
-    val data = mapOf(
-        "name" to name.trim(),
-        "phone" to phone.trim(),
-        "address" to address.trim(),
-        "updatedAt" to now
-    )
 
-    FirebaseFirestore.getInstance()
+    val ref = FirebaseFirestore.getInstance()
         .collection("users")
         .document(user.uid)
-        .set(data, SetOptions.merge())
-        .addOnSuccessListener { onDone() }
+
+    FirebaseFirestore.getInstance().runTransaction { tr ->
+        val snap = tr.get(ref)
+        val storedAddress = (snap.getString("address") ?: "").trim()
+        val addresses = (snap.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
+            ?.filter { it.isNotBlank() }
+            ?.distinct()
+            ?: emptyList()
+        val trimmedAddress = address.trim()
+        val updatedAddresses = buildList {
+            addAll(addresses)
+            if (storedAddress.isNotBlank() && !contains(storedAddress)) {
+                add(storedAddress)
+            }
+            if (trimmedAddress.isNotBlank() && !contains(trimmedAddress)) {
+                add(trimmedAddress)
+            }
+        }
+
+        tr.set(
+            ref,
+            mapOf(
+                "name" to name.trim(),
+                "phone" to phone.trim(),
+                "addresses" to updatedAddresses,
+                "lastAddress" to trimmedAddress,
+                "updatedAt" to now
+            ),
+            SetOptions.merge()
+        )
+        null
+    }.addOnSuccessListener { onDone() }
         .addOnFailureListener { e -> onError(e.message ?: "Не удалось сохранить профиль") }
 }
 

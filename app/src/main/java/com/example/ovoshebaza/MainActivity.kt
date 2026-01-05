@@ -106,6 +106,11 @@ import androidx.compose.ui.text.font.FontWeight
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import com.example.ovoshebaza.loadUserProfile
 
 
 // Главная Activity — точка входа в приложение
@@ -127,35 +132,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot() {
-    val auth = remember { FirebaseAuth.getInstance() }
-    var user by remember { mutableStateOf(auth.currentUser) }
-
-    DisposableEffect(auth) {
-        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            user = firebaseAuth.currentUser
-        }
-        auth.addAuthStateListener(listener)
-        onDispose { auth.removeAuthStateListener(listener) }
-    }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    if (user == null) {
-        AuthScreen(
-            onSignedIn = {
-                ensureUserDocExists(
-                    onDone = { /* ничего не нужно */ },
-                    onError = { msg ->
-                        android.widget.Toast
-                            .makeText(context, msg, android.widget.Toast.LENGTH_LONG)
-                            .show()
-                    }
-                )
-            }
-        )
-    } else {
-        VeggieShopApp()
-    }
+    VeggieShopApp()
 }
 
 
@@ -167,6 +144,7 @@ fun VeggieShopApp() {
     val shopViewModel: ShopViewModel = viewModel()
     val products = shopViewModel.products
     val cartItems = shopViewModel.cartItems
+    val context = LocalContext.current
 
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route ?: Screen.Catalog.route
@@ -177,7 +155,6 @@ fun VeggieShopApp() {
     var adminPin by remember { mutableStateOf("") }
     var adminPinError by remember { mutableStateOf<String?>(null) }
 
-    val context = LocalContext.current
     var showSupportDialog by remember { mutableStateOf(false) }
     var supportQuestion by remember { mutableStateOf("") }
     var supportPhone by remember { mutableStateOf("") }
@@ -224,9 +201,13 @@ fun VeggieShopApp() {
         topBar = {
             val topBarBrush = Brush.verticalGradient(
                 colors = listOf(
-                    MaterialTheme.colorScheme.primary,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    Color(0xFF2ECC71),
+                    Color(0xFF76D275),
+                    Color(0xFFFFA726),
+                    Color(0xFFF57C00)
+//                    MaterialTheme.colorScheme.primary,
+//                    MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+//                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                 )
             )
 
@@ -291,12 +272,13 @@ fun VeggieShopApp() {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface
                 ) {
-                    listOf(Screen.Catalog, Screen.Cart, Screen.Request).forEach { screen ->
+                    listOf(Screen.Catalog, Screen.Cart, Screen.Request, Screen.Profile).forEach { screen ->
 
                         val icon = when (screen) {
                             Screen.Catalog -> Icons.Default.Store
                             Screen.Cart -> Icons.Default.ShoppingCart
                             Screen.Request -> Icons.Default.NoteAdd
+                            Screen.Profile -> Icons.Default.Person
                             Screen.Admin -> Icons.Default.Settings
                             Screen.ProductDetails -> Icons.Default.Store // просто заглушка, в меню он не будет
                         }
@@ -615,6 +597,34 @@ fun AppNavHost(
         composable(Screen.Request.route) {
             RequestProductScreen()
         }
+
+        composable(Screen.Profile.route) {
+            ProfileScreen(
+                products = products,
+                onAddToCart = onAddToCart,
+                onAuthRequested = { navController.navigate("auth") }
+            )
+        }
+
+        composable("auth") {
+            AuthScreen(
+                onSignedIn = {
+                    ensureUserDocExists(
+                        onDone = { navController.popBackStack() },
+                        onError = { msg ->
+                            android.widget.Toast
+                                .makeText(
+                                    navController.context,
+                                    msg,
+                                    android.widget.Toast.LENGTH_LONG
+                                )
+                                .show()
+                        }
+                    )
+                }
+            )
+        }
+
 
         composable(Screen.Admin.route) {
             AdminScreen(
@@ -1355,7 +1365,7 @@ fun ProductCardLarge(
 
 
 
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
     cartItems: List<CartItem>,
@@ -1379,6 +1389,9 @@ fun CartScreen(
     var customerName by remember { mutableStateOf("") }
     var customerPhone by remember { mutableStateOf("") }
     var customerAddress by remember { mutableStateOf("") }
+    var customerAddresses by remember { mutableStateOf<List<String>>(emptyList()) }
+    var addressMenuExpanded by remember { mutableStateOf(false) }
+    var isManualAddress by remember { mutableStateOf(false) }
     var customerComment by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf(PaymentMethod.CASH) }
 
@@ -1396,8 +1409,19 @@ fun CartScreen(
             onResult = { profile ->
                 if (profile == null) return@loadUserProfile
                 if (customerName.isBlank() && profile.name.isNotBlank()) customerName = profile.name
-                if (customerAddress.isBlank() && profile.address.isNotBlank()) customerAddress = profile.address
                 if (customerPhone.isBlank() && profile.phone.isNotBlank()) customerPhone = profile.phone
+                if (customerAddresses.isEmpty()) customerAddresses = profile.addresses
+                if (customerAddress.isBlank()) {
+                    val lastAddress = profile.lastAddress.ifBlank {
+                        profile.addresses.lastOrNull().orEmpty()
+                    }
+                    if (lastAddress.isNotBlank()) {
+                        customerAddress = lastAddress
+                    }
+                }
+                if (profile.addresses.size > 1) {
+                    isManualAddress = false
+                }
             }
         )
     }
@@ -1518,7 +1542,18 @@ fun CartScreen(
 
                 item {
                     Button(
-                        onClick = { showOrderDialog = true },
+                        onClick = {
+                            val user = FirebaseAuth.getInstance().currentUser
+                            if (user == null) {
+                                Toast.makeText(
+                                    context,
+                                    "Чтобы сделать заказ, авторизуйтесь.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                return@Button
+                            }
+                            showOrderDialog = true
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Оформить заказ")
@@ -1561,12 +1596,55 @@ fun CartScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    OutlinedTextField(
-                        value = customerAddress,
-                        onValueChange = { customerAddress = it },
-                        label = { Text("Адрес доставки") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    if (customerAddresses.size <= 1 || isManualAddress) {
+                        OutlinedTextField(
+                            value = customerAddress,
+                            onValueChange = { customerAddress = it },
+                            label = { Text("Адрес доставки") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        ExposedDropdownMenuBox(
+                            expanded = addressMenuExpanded,
+                            onExpandedChange = { addressMenuExpanded = !addressMenuExpanded }
+                        ) {
+                            OutlinedTextField(
+                                value = customerAddress,
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Адрес доставки") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = addressMenuExpanded)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = addressMenuExpanded,
+                                onDismissRequest = { addressMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Новый адрес") },
+                                    onClick = {
+                                        addressMenuExpanded = false
+                                        isManualAddress = true
+                                        customerAddress = ""
+                                    }
+                                )
+                                customerAddresses.forEach { address ->
+                                    DropdownMenuItem(
+                                        text = { Text(address) },
+                                        onClick = {
+                                            customerAddress = address
+                                            isManualAddress = false
+                                            addressMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
@@ -1643,6 +1721,11 @@ fun CartScreen(
                                         context = context,
                                         order = order,
                                         onSuccess = {
+                                            saveUserProfileFromOrder(
+                                                name = customerName,
+                                                phone = customerPhone,
+                                                address = customerAddress
+                                            )
                                             saveOrderToHistory(order, "TELEGRAM")
 
                                             isSendingOrder = false

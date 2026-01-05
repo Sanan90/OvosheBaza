@@ -36,6 +36,7 @@ enum class Screen(val route: String, val label: String) {
     Catalog("catalog", "Ассортимент"),
     Cart("cart", "Корзина"),
     Request("request", "Заявка"),
+    Profile("profile", "Профиль"),
     Admin("admin", "Админ"),
     ProductDetails("product/{productId}", "Товар")
 }
