@@ -61,10 +61,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.vector.ImageVector
 
+import androidx.compose.material3.AlertDialog
+
 @Composable
 fun ProfileScreen(
     products: List<Product>,
     onAddToCart: (Product, Double) -> Unit,
+    cartItems: List<CartItem>,
+    onClearCart: () -> Unit,
     onAuthRequested: () -> Unit
 ) {
     val user = FirebaseAuth.getInstance().currentUser
@@ -79,6 +83,8 @@ fun ProfileScreen(
     var addressExpanded by remember { mutableStateOf(false) }
     var newAddressInput by remember { mutableStateOf("") }
     var ordersExpanded by remember { mutableStateOf(false) }
+    var showReplaceDialog by remember { mutableStateOf(false) }
+    var pendingOrder by remember { mutableStateOf<OrderSummary?>(null) }
     val expandedOrders = remember { mutableStateMapOf<String, Boolean>() }
 
     LaunchedEffect(user?.uid) {
@@ -430,32 +436,14 @@ fun ProfileScreen(
                                                                 }
                                                             }
                                                         }
-                                                        TextButton(
-                                                            onClick = {
-                                                                val missing = mutableListOf<String>()
-                                                                order.items.forEach { item ->
-                                                                    val product = products.find { it.id == item.id }
-                                                                    if (product == null || !product.inStock) {
-                                                                        missing.add(item.name)
-                                                                    } else {
-                                                                        onAddToCart(product, item.quantity)
-                                                                    }
-                                                                }
-                                                                if (missing.isNotEmpty()) {
-                                                                    Toast.makeText(
-                                                                        context,
-                                                                        "Нет в наличии: ${missing.joinToString()}",
-                                                                        Toast.LENGTH_LONG
-                                                                    ).show()
-                                                                } else {
-                                                                    Toast.makeText(
-                                                                        context,
-                                                                        "Заказ добавлен в корзину",
-                                                                        Toast.LENGTH_SHORT
-                                                                    ).show()
-                                                                }
+                                                        TextButton(onClick = {
+                                                            if (cartItems.isNotEmpty()) {
+                                                                pendingOrder = order
+                                                                showReplaceDialog = true
+                                                            } else {
+                                                                addOrderToCart(order, products, onAddToCart, context)
                                                             }
-                                                        ) {
+                                                        }) {
                                                             Text("Повторить заказ")
                                                         }
                                                     }
@@ -476,6 +464,66 @@ fun ProfileScreen(
             }
         }
     }
+
+
+    if (showReplaceDialog) {
+        AlertDialog(
+            onDismissRequest = { showReplaceDialog = false },
+            title = { Text("Корзина не пуста") },
+            text = { Text("Очистить корзину и добавить товары из заказа?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val order = pendingOrder
+                        showReplaceDialog = false
+                        pendingOrder = null
+                        if (order != null) {
+                            onClearCart()
+                            addOrderToCart(order, products, onAddToCart, context)
+                        }
+                    }
+                ) {
+                    Text("Да, заменить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReplaceDialog = false }) {
+                    Text("Нет")
+                }
+            }
+        )
+    }
+}
+
+private fun addOrderToCart(
+    order: OrderSummary,
+    products: List<Product>,
+    onAddToCart: (Product, Double) -> Unit,
+    context: android.content.Context
+) {
+    val missing = mutableListOf<String>()
+    order.items.forEach { item ->
+        val product = products.find { it.id == item.id }
+        if (product == null || !product.inStock) {
+            missing.add(item.name)
+        } else {
+            onAddToCart(product, item.quantity)
+        }
+    }
+    if (missing.isNotEmpty()) {
+        Toast.makeText(
+            context,
+            "Нет в наличии: ${missing.joinToString()}",
+            Toast.LENGTH_LONG
+        ).show()
+    } else {
+        Toast.makeText(
+            context,
+            "Заказ добавлен в корзину",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
 }
 
 @Composable

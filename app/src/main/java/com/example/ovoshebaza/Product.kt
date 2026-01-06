@@ -33,7 +33,7 @@ data class Product(
 
 
 enum class Screen(val route: String, val label: String) {
-    Catalog("catalog", "Ассортимент"),
+    Catalog("catalog", "Каталог"),
     Cart("cart", "Корзина"),
     Request("request", "Заявка"),
     Profile("profile", "Профиль"),

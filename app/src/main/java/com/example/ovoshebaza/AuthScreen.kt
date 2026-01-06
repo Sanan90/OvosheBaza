@@ -95,6 +95,13 @@ fun AuthScreen(
 
         PhoneAuthProvider.verifyPhoneNumber(optionsBuilder.build())
     }
+//    временный код. Удалить----------
+    fun quickTestSignIn() {
+        phone = "+79999999999"
+        code = ""
+        sendCode(false)
+    }
+//   до сюда--------------------------
 
     fun confirmCode() {
         errorText = null
@@ -156,6 +163,21 @@ fun AuthScreen(
             ) {
                 Text("Отправить код")
             }
+
+
+//    временный код. Удалить--------------------------------------
+
+            OutlinedButton(
+                onClick = { quickTestSignIn() },
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Тестовый вход (+79999999999)")
+            }
+            //   до сюда-------------------------------------------
+
+
+
 
             if (verificationId != null) {
                 OutlinedTextField(

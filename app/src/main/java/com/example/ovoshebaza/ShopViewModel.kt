@@ -100,6 +100,9 @@ class ShopViewModel : ViewModel() {
     fun removeFromCart(productId: String) {
         cartItems = cartItems.filterNot { it.product.id == productId }
     }
+    fun clearCart() {
+        cartItems = emptyList()
+    }
 
     // ---------- РАБОТА С ТОВАРАМИ В FIRESTORE ----------
 

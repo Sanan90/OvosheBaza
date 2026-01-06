@@ -112,6 +112,15 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import com.example.ovoshebaza.loadUserProfile
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.People
+import androidx.compose.ui.graphics.vector.ImageVector
+
 
 // Главная Activity — точка входа в приложение
 class MainActivity : ComponentActivity() {
@@ -352,6 +361,9 @@ fun VeggieShopApp() {
                 onRemoveFromCart = { productId ->
                     shopViewModel.removeFromCart(productId)
                 },
+                onClearCart = {
+                    shopViewModel.clearCart()
+                },
                 onUpdateProduct = { updated ->
                     shopViewModel.updateProduct(updated)
                 },
@@ -566,6 +578,7 @@ fun AppNavHost(
     products: List<Product>,
     cartItems: List<CartItem>,
     onAddToCart: (Product, Double) -> Unit,
+    onClearCart: () -> Unit,
     onUpdateQuantity: (String, Double) -> Unit,
     onRemoveFromCart: (String) -> Unit,
     onUpdateProduct: (Product) -> Unit,
@@ -602,6 +615,8 @@ fun AppNavHost(
             ProfileScreen(
                 products = products,
                 onAddToCart = onAddToCart,
+                cartItems = cartItems,
+                onClearCart = onClearCart,
                 onAuthRequested = { navController.navigate("auth") }
             )
         }
@@ -2519,7 +2534,7 @@ fun ProductEditDialog(
     )
 }
 
-
+enum class AdminTab { PRODUCTS, USERS }
 // 4. Админ-экран (пока пустой)
 @Composable
 fun AdminScreen(
@@ -2527,9 +2542,18 @@ fun AdminScreen(
     onUpdateProduct: (Product) -> Unit,
     onAddProduct: (Product) -> Unit
 ) {
+
+
     var showEditDialog by remember { mutableStateOf<Product?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var selectedTab by remember { mutableStateOf(AdminTab.PRODUCTS) }
+    var isLoadingUsers by remember { mutableStateOf(false) }
+    var usersError by remember { mutableStateOf<String?>(null) }
+    var users by remember { mutableStateOf<List<AdminUserSummary>>(emptyList()) }
+    val expandedUsers = remember { mutableStateMapOf<String, Boolean>() }
+    val userOrders = remember { mutableStateMapOf<String, List<AdminOrderSummary>>() }
+    val loadingOrders = remember { mutableStateMapOf<String, Boolean>() }
     val filteredProducts = remember(products, searchQuery) {
         if (searchQuery.isBlank()) {
             products
@@ -2538,59 +2562,265 @@ fun AdminScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-    ) {
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 88.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            item {
-                Text(
-                    text = "Админ-панель",
-                    style = MaterialTheme.typography.titleLarge
-                )
+    LaunchedEffect(selectedTab) {
+        if (selectedTab != AdminTab.USERS) return@LaunchedEffect
+        isLoadingUsers = true
+        usersError = null
+        FirebaseFirestore.getInstance()
+            .collection("users")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                users = snapshot.documents.map { doc ->
+                    val addresses = (doc.get("addresses") as? List<*>)?.mapNotNull { it?.toString() }
+                        ?: emptyList()
+                    AdminUserSummary(
+                        uid = doc.id,
+                        name = (doc.getString("name") ?: "").trim(),
+                        phone = (doc.getString("phone") ?: "").trim(),
+                        lastAddress = (doc.getString("lastAddress") ?: "").trim(),
+                        addresses = addresses
+                    )
+                }.sortedBy { it.name.ifBlank { it.phone } }
+                isLoadingUsers = false
             }
-
-
-            item {
-                Text(
-                    text = "Здесь можно изменить товары, цены, единицы, популярность и наличие.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            .addOnFailureListener { e ->
+                usersError = e.message ?: "Не удалось загрузить пользователей"
+                isLoadingUsers = false
             }
+    }
 
-            item {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Поиск по названию") },
+    Scaffold(
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-            items(filteredProducts.size) { index ->
-                val product = filteredProducts[index]
-                AdminProductRow(
-                    product = product,
-                    onEditClick = { showEditDialog = product },
-                    onQuickPriceChange = { updated ->
-                        onUpdateProduct(updated)
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AdminBottomTab(
+                            label = "Пользователи",
+                            icon = Icons.Default.People,
+                            selected = selectedTab == AdminTab.USERS,
+                            onClick = { selectedTab = AdminTab.USERS }
+                       )
+
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .offset(y = (-8).dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            FloatingActionButton(
+                                onClick = { showAddDialog = true },
+                                containerColor = Color(0xFF2ECC71),
+                                contentColor = Color.White
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Добавить товар"
+                                )
+                            }
+                        }
+
+                        AdminBottomTab(
+                            label = "Товары",
+                            icon = Icons.Default.Store,
+                            selected = selectedTab == AdminTab.PRODUCTS,
+                            onClick = { selectedTab = AdminTab.PRODUCTS }
+                        )
                     }
-                )
+                }
             }
         }
-        Button(
-            onClick = { showAddDialog = true },
+    ) { innerPadding ->
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Text("Добавить новый товар")
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 88.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item {
+                    Text(
+                        text = "Админ-панель",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                }
+
+                if (selectedTab == AdminTab.PRODUCTS) {
+                    item {
+                        Text(
+                            text = "Здесь можно изменить товары, цены, единицы, популярность и наличие.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    item {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            label = { Text("Поиск по названию") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+
+                    items(filteredProducts.size) { index ->
+                        val product = filteredProducts[index]
+                        AdminProductRow(
+                            product = product,
+                            onEditClick = { showEditDialog = product },
+                            onQuickPriceChange = { updated ->
+                                onUpdateProduct(updated)
+                            }
+                        )
+                    }
+                } else {
+                    item {
+                        if (isLoadingUsers) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                Text("Загружаем пользователей…")
+                            }
+                        }
+                        if (usersError != null) {
+                            Text(
+                                text = usersError ?: "",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    items(users) { user ->
+                        val isExpanded = expandedUsers[user.uid] == true
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateContentSize()
+                                .clickable {
+                                    val next = !isExpanded
+                                    expandedUsers[user.uid] = next
+                                    if (next && !userOrders.containsKey(user.uid)) {
+                                        loadingOrders[user.uid] = true
+                                        FirebaseFirestore.getInstance()
+                                            .collection("users")
+                                            .document(user.uid)
+                                            .collection("orders")
+                                            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+                                            .get()
+                                            .addOnSuccessListener { snapshot ->
+                                                val orders = snapshot.documents.map { doc ->
+                                                    val items = doc.get("items") as? List<*>
+                                                    AdminOrderSummary(
+                                                        orderId = doc.id,
+                                                        createdAt = doc.getLong("createdAt") ?: 0L,
+                                                        total = doc.getDouble("total") ?: 0.0,
+                                                        itemsCount = items?.size ?: 0
+                                                    )
+                                                }
+                                                userOrders[user.uid] = orders
+                                                loadingOrders[user.uid] = false
+                                            }
+                                            .addOnFailureListener {
+                                                loadingOrders[user.uid] = false
+                                            }
+                                    }
+                                },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val title = listOfNotNull(
+                                    user.name.takeIf { it.isNotBlank() },
+                                    user.phone.takeIf { it.isNotBlank() }
+                                ).joinToString(" • ")
+                                Text(
+                                    text = if (title.isNotBlank()) title else "Без имени",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                if (user.lastAddress.isNotBlank()) {
+                                    Text(
+                                        text = user.lastAddress,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                AnimatedVisibility(
+                                    visible = isExpanded,
+                                    enter = expandVertically(),
+                                    exit = shrinkVertically()
+                                ) {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Divider()
+                                        if (user.addresses.isNotEmpty()) {
+                                            Text(
+                                                text = "Адреса:",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            user.addresses.forEach { address ->
+                                                Text(
+                                                    text = "• $address",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                        val orders = userOrders[user.uid] ?: emptyList()
+                                        if (loadingOrders[user.uid] == true) {
+                                            Text(
+                                                text = "Загружаем заказы…",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        } else if (orders.isEmpty()) {
+                                            Text(
+                                                text = "Заказов нет",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "Заказы:",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                            orders.forEach { order ->
+                                                Text(
+                                                    text = "• #${order.orderId.takeLast(6)} · ${order.total.toInt()} ₽ · ${order.itemsCount} поз.",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2629,6 +2859,51 @@ fun AdminScreen(
         )
     }
 }
+
+@Composable
+private fun AdminBottomTab(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = Modifier
+            .widthIn(min = 88.dp)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = tint
+        )
+    }
+}
+
+
+data class AdminUserSummary(
+    val uid: String,
+    val name: String,
+    val phone: String,
+    val lastAddress: String,
+    val addresses: List<String>
+)
+
+data class AdminOrderSummary(
+    val orderId: String,
+    val createdAt: Long,
+    val total: Double,
+    val itemsCount: Int
+)
 
 
 
