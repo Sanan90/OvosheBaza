@@ -30,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.filled.Edit
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 import androidx.compose.foundation.lazy.LazyColumn
@@ -116,11 +115,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.People
 import androidx.compose.ui.graphics.vector.ImageVector
 
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.style.TextOverflow
 
 // Главная Activity — точка входа в приложение
 class MainActivity : ComponentActivity() {
@@ -208,78 +214,84 @@ fun VeggieShopApp() {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            val topBarBrush = Brush.verticalGradient(
-                colors = listOf(
-                    Color(0xFF2ECC71),
-                    Color(0xFF76D275),
-                    Color(0xFFFFA726),
-                    Color(0xFFF57C00)
-//                    MaterialTheme.colorScheme.primary,
-//                    MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-//                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                )
-            )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(topBarBrush)
-            ) {
+            if (currentRoute == Screen.Cart.route) {
+
                 CenterAlignedTopAppBar(
                     title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val noRippleInteraction = remember { MutableInteractionSource() }
+                        Text(
+                            text = "Корзина",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        )
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+            } else {
+                val topBarBrush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF55C76B),
+                        Color(0xFF7DDC7B),
+                        Color(0xFFF6B24C),
+                        Color(0xFFF0932B)
+                    )
+                )
 
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(topBarBrush)
+                ) {
 
-                            Column(
-                                modifier = Modifier.clickable(
-                                    interactionSource = noRippleInteraction,
-                                    indication = null
-                                ) {
-
-                                    logoClickCount++
-
-                                    if (logoClickCount >= 7) {
-                                        logoClickCount = 0
-                                        // показываем диалог ввода PIN
-                                        showAdminPinDialog = true
-                                        adminPin = ""
-                                        adminPinError = null
-                                    }
-                                }
+                    CenterAlignedTopAppBar(
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                val noRippleInteraction = remember { MutableInteractionSource() }
+
+                                Column(
+                                    modifier = Modifier.clickable(
+                                        interactionSource = noRippleInteraction,
+                                        indication = null
+                                    ) {
+                                        logoClickCount++
+
+                                        if (logoClickCount >= 7) {
+                                            logoClickCount = 0
+                                            // показываем диалог ввода PIN
+                                            showAdminPinDialog = true
+                                            adminPin = ""
+                                            adminPinError = null
+                                        }
+                                    }
                                 ) {
                                     Text(
-                                        text = "🍎 Овощная база",
+                                        text = "Клинская Овощебаза",
                                         style = MaterialTheme.typography.titleLarge.copy(
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     )
                                 }
-                                Text(
-                                    text = "свежие продукты каждый день",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
-                                )
+
                             }
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = Color.Transparent,
+                            titleContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
                     )
-                )
+                }
             }
         },
         bottomBar = {
             if (currentRoute != Screen.Admin.route) {
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                 ) {
                     listOf(Screen.Catalog, Screen.Cart, Screen.Request, Screen.Profile).forEach { screen ->
 
@@ -772,6 +784,21 @@ fun CatalogScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
 
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                HomeHeroCard()
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                CategoryPromoRow(
+                    selectedFilter = selectedFilter,
+                    onSelectCategory = { category ->
+                        selectedFilter = CatalogFilter.Category(category)
+                        scope.launch { gridState.animateScrollToItem(3) }
+                    }
+                )
+            }
+
+
             // 1) Популярные сверху (лента)
             item(span = { GridItemSpan(maxLineSpan) }) {
                 if (popularPreview.isNotEmpty()) {
@@ -830,15 +857,15 @@ fun CatalogScreen(
                     selectedFilter = selectedFilter,
                     onSelectAll = {
                         selectedFilter = CatalogFilter.All
-                        scope.launch { gridState.animateScrollToItem(2) }
+                        scope.launch { gridState.animateScrollToItem(3) }
                     },
                     onSelectCategory = { cat ->
                         selectedFilter = CatalogFilter.Category(cat)
-                        scope.launch { gridState.animateScrollToItem(2) }
+                        scope.launch { gridState.animateScrollToItem(3) }
                     },
                     onSelectOutOfStock = {
                         selectedFilter = CatalogFilter.OutOfStock
-                        scope.launch { gridState.animateScrollToItem(2) }
+                        scope.launch { gridState.animateScrollToItem(3) }
                     }
                 )
             }
@@ -858,6 +885,140 @@ fun CatalogScreen(
         }
     }
 }
+
+@Composable
+fun HomeHeroCard() {
+    val cardShape = RoundedCornerShape(32.dp)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 100.dp),
+        shape = cardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Transparent
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .shadow(8.dp, cardShape)
+                .clip(cardShape)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFFFDF7E7),
+                            Color(0xFFF6EBD4)
+                        )
+                    )
+                )
+                .padding(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Свежие овощи\nи фрукты",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Поставка товара каждый день",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+private data class PromoCategory(
+    val title: String,
+    val iconRes: Int,
+    val category: ProductCategory
+)
+
+@Composable
+fun CategoryPromoRow(
+    selectedFilter: CatalogFilter,
+    onSelectCategory: (ProductCategory) -> Unit
+) {
+    val categories = listOf(
+        PromoCategory("Овощи", R.drawable.vegetables, ProductCategory.VEGETABLES),
+        PromoCategory("Фрукты", R.drawable.fruits, ProductCategory.FRUITS),
+        PromoCategory("Зелень", R.drawable.green, ProductCategory.GREENS),
+        PromoCategory("Ягоды", R.drawable.berries, ProductCategory.BERRIES)
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        categories.forEach { item ->
+            val isSelected = selectedFilter is CatalogFilter.Category &&
+                    (selectedFilter as CatalogFilter.Category).category == item.category
+
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(96.dp) // ✅ карточки ниже, не вытянутые
+                    .clickable { onSelectCategory(item.category) },
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (isSelected)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.outline
+                ),
+                elevation = CardDefaults.cardElevation(0.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 10.dp, bottom = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+
+                    // 🔥 КРУПНАЯ ИКОНКА
+                    Image(
+                        painter = painterResource(id = item.iconRes),
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(62.dp) // ⬅️ заметно больше
+                    )
+
+                    Text(
+                        text = item.title,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+
 
 
 
@@ -1392,7 +1553,7 @@ fun CartScreen(
     // Считаем примерную сумму заказа
     val itemsSubtotal = cartItems.sumOf { it.product.price * it.quantity }
     val isFreeDelivery = itemsSubtotal >= 1500.0
-    val deliveryFee = if (isFreeDelivery) 0.0 else 200.0
+    val deliveryFee = if (isFreeDelivery) 0.0 else 150.0
     val paymentDiscountPercent = 0.05
 
 
@@ -1448,15 +1609,9 @@ fun CartScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
 
-        Text(
-            text = "Корзина",
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         if (cartItems.isEmpty()) {
             // Если корзина пустая
@@ -1488,76 +1643,13 @@ fun CartScreen(
                     )
                 }
                 item {
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = "Способ оплаты",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-            // Примерная сумма
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = paymentMethod == PaymentMethod.CASH,
-                            onClick = { paymentMethod = PaymentMethod.CASH }
-                        )
-                        Text(PaymentMethod.CASH.label)
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = paymentMethod == PaymentMethod.CARD,
-                            onClick = { paymentMethod = PaymentMethod.CARD }
-                        )
-                        Text(PaymentMethod.CARD.label)
-                    }
-                }
-
-                item {
-                    Text(
-                        text = "Товары: ${itemsSubtotal.toInt()} ₽",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    if (discount > 0.0) {
-                        Text(
-                            text = "Скидка за наличные: -${discount.toInt()} ₽",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Text(
-                        text = if (deliveryFee > 0.0) "Доставка: 200 ₽" else "Доставка: бесплатно",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-
-                    Text(
-                        text = "Итого: ~ ${totalPrice.toInt()} ₽",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = "Фактическая сумма может немного отличаться из-за точного веса (+/− ~100 г).",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    if (!isFreeDelivery) {
-                        val remaining = (1500.0 - itemsSubtotal).coerceAtLeast(0.0)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Добавьте еще ${remaining.toInt()} ₽ для бесплатной доставки.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                item {
-                    Button(
-                        onClick = {
+                    CartSummaryCard(
+                        itemsSubtotal = itemsSubtotal,
+                        discount = discount,
+                        deliveryFee = deliveryFee,
+                        totalPrice = totalPrice,
+                        isFreeDelivery = isFreeDelivery,
+                        onCheckout = {
                             val user = FirebaseAuth.getInstance().currentUser
                             if (user == null) {
                                 Toast.makeText(
@@ -1565,14 +1657,13 @@ fun CartScreen(
                                     "Чтобы сделать заказ, авторизуйтесь.",
                                     Toast.LENGTH_LONG
                                 ).show()
-                                return@Button
+                                return@CartSummaryCard
                             }
                             showOrderDialog = true
                         },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Оформить заказ")
-                    }
+                        paymentMethod = paymentMethod,
+                        onPaymentMethodChange = { paymentMethod = it }
+                    )
                 }
             }
         }
@@ -1899,73 +1990,138 @@ fun CartItemRow(
         UnitType.KG -> "кг"
         UnitType.PIECE -> "шт"
     }
+    val step = if (item.product.unit == UnitType.KG) 0.5 else 1.0
+    val itemTotal = item.product.price * item.quantity
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp) // было 12.dp
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // ----- ВЕРХНЯЯ СТРОКА: КОЛИЧЕСТВО + ИКОНКА РЕДАКТИРОВАНИЯ -----
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
             ) {
+                if (!item.product.imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = item.product.imageUrl,
+                        contentDescription = item.product.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text("Фото", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = item.product.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Medium
+                        ),
+                        maxLines = 2
+                    )
+                    Text(
+                        text = "${itemTotal.toInt()} ₽",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                }
+
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
-                    text = "${formatQuantity(item.quantity)} $unitLabel",
-                    style = MaterialTheme.typography.bodyMedium   // было titleMedium
+                    text = "${formatQuantity(item.quantity)} $unitLabel • ${item.product.price.toInt()} ₽ / $unitLabel",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Row {
-                    IconButton(
-                        onClick = { showDialog = true }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Изменить количество"
-                        )
-                    }
+                Spacer(modifier = Modifier.height(8.dp))
 
-                    IconButton(
-                        onClick = { onRemoveFromCart(item.product.id) }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        tonalElevation = 1.dp,
+                        color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Удалить"
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val newQuantity = item.quantity - step
+                                    if (newQuantity <= 0.0) {
+                                        onRemoveFromCart(item.product.id)
+                                    } else {
+                                        onUpdateQuantity(item.product.id, newQuantity)
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Remove,
+                                    contentDescription = "Уменьшить"
+                                )
+                            }
+                            Text(
+                                text = formatQuantity(item.quantity),
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            )
+                            IconButton(
+                                onClick = {
+                                    onUpdateQuantity(
+                                        item.product.id,
+                                        item.quantity + step
+                                    )
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Увеличить"
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    TextButton(onClick = { showDialog = true }) {
+                        Text("Изменить")
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = item.product.name,
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Text(
-                text = buildString {
-                    append(item.product.price.toInt())
-                    append(" ₽ / ")
-                    append(unitLabel)
-                },
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            val itemTotal = item.product.price * item.quantity
-            Text(
-                text = "Примерно: ~ ${itemTotal.toInt()} ₽",
-                style = MaterialTheme.typography.bodyMedium
-            )
-
         }
     }
+
+
 
     // ----- ДИАЛОГ РЕДАКТИРОВАНИЯ КОЛИЧЕСТВА -----
     if (showDialog) {
@@ -1984,6 +2140,127 @@ fun CartItemRow(
                 showDialog = false
             }
         )
+    }
+}
+
+@Composable
+fun CartSummaryCard(
+    itemsSubtotal: Double,
+    discount: Double,
+    deliveryFee: Double,
+    totalPrice: Double,
+    isFreeDelivery: Boolean,
+    onCheckout: () -> Unit,
+    paymentMethod: PaymentMethod,
+    onPaymentMethodChange: (PaymentMethod) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "Способ оплаты",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Medium
+                )
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = paymentMethod == PaymentMethod.CASH,
+                    onClick = { onPaymentMethodChange(PaymentMethod.CASH) }
+                )
+                Text(PaymentMethod.CASH.label)
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = paymentMethod == PaymentMethod.CARD,
+                    onClick = { onPaymentMethodChange(PaymentMethod.CARD) }
+                )
+                Text(PaymentMethod.CARD.label)
+            }
+
+            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Сумма")
+                Text("${itemsSubtotal.toInt()} ₽")
+            }
+
+            if (discount > 0.0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Скидка за наличные")
+                    Text("-${discount.toInt()} ₽")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Доставка")
+                Text(if (deliveryFee > 0.0) "${deliveryFee.toInt()} ₽" else "Бесплатно")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Итого",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    )
+                )
+                Text(
+                    text = "${totalPrice.toInt()} ₽",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold
+                    )
+                )
+            }
+
+            if (!isFreeDelivery) {
+                val remaining = (1500.0 - itemsSubtotal).coerceAtLeast(0.0)
+                Text(
+                    text = "Добавьте еще ${remaining.toInt()} ₽ для бесплатной доставки.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text(
+                text = "Фактическая сумма может немного отличаться из-за точного веса (+/− ~100 г).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Button(
+                onClick = onCheckout,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text("Оформить заказ")
+            }
+        }
     }
 }
 
