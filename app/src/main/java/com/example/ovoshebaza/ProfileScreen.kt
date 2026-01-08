@@ -398,6 +398,18 @@ fun ProfileScreen(
                                                     text = "Товаров: ${order.itemsCount}",
                                                     style = MaterialTheme.typography.bodySmall
                                                 )
+                                                val statusLabel = when (order.status.uppercase(Locale.getDefault())) {
+                                                    "RECEIVED" -> "Получен"
+                                                    "ACCEPTED" -> "Принят / собирается"
+                                                    "IN_TRANSIT" -> "В пути"
+                                                    "DONE" -> "Завершён"
+                                                    "CANCELLED" -> "Отменён"
+                                                    else -> "Получен"
+                                                }
+                                                Text(
+                                                    text = "Статус: $statusLabel",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
                                                 if (order.channel.isNotBlank()) {
                                                     Text(
                                                         text = "Канал: ${order.channel}",

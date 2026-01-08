@@ -1797,17 +1797,7 @@ fun CartScreen(
                                     }
                                     val total = itemsSubtotal - discount + deliveryFee
 
-                                    val message = buildOrderMessage(
-                                        cartItems = cartItems,
-                                        customerName = customerName,
-                                        customerPhone = customerPhone,
-                                        customerAddress = customerAddress,
-                                        comment = customerComment,
-                                        paymentMethod = paymentMethod,
-                                        deliveryFee = deliveryFee,
-                                        discount = discount,
-                                        total = total
-                                    )
+
 
                                     val order = buildOrderMap(
                                         cartItems = cartItems,
@@ -1823,36 +1813,63 @@ fun CartScreen(
 
 
 
-                                    sendOrderViaFirebaseTelegram(
-                                        context = context,
+                                    saveOrderToHistory(
                                         order = order,
-                                        onSuccess = {
-                                            saveUserProfileFromOrder(
-                                                name = customerName,
-                                                phone = customerPhone,
-                                                address = customerAddress
+                                        channel = "TELEGRAM",
+                                        onDone = { orderId ->
+                                            val user = FirebaseAuth.getInstance().currentUser
+                                            if (user == null) {
+                                                isSendingOrder = false
+                                                Toast.makeText(
+                                                    context,
+                                                    "Пользователь не авторизован",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                                return@saveOrderToHistory
+                                            }
+                                            val payload = order.toMutableMap().apply {
+                                                put("uid", user.uid)
+                                                put("orderId", orderId)
+                                            }
+                                            sendOrderViaFirebaseTelegram(
+                                                context = context,
+                                                order = payload,
+                                                onSuccess = {
+                                                    saveUserProfileFromOrder(
+                                                        name = customerName,
+                                                        phone = customerPhone,
+                                                        address = customerAddress
+                                                    )
+
+                                                    isSendingOrder = false
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Заказ отправлен в Telegram ✅",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                    showOrderDialog = false
+
+                                                    // (по желанию) очистка полей после успешной отправки:
+                                                    customerName = ""
+                                                    customerPhone = ""
+                                                    customerAddress = ""
+                                                    customerComment = ""
+                                                },
+                                                onError = { err ->
+                                                    isSendingOrder = false
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Ошибка отправки: $err",
+                                                        Toast.LENGTH_LONG
+                                                    ).show()
+                                                }
                                             )
-                                            saveOrderToHistory(order, "TELEGRAM")
-
-                                            isSendingOrder = false
-                                            Toast.makeText(
-                                                context,
-                                                "Заказ отправлен в Telegram ✅",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                            showOrderDialog = false
-
-                                            // (по желанию) очистка полей после успешной отправки:
-                                            customerName = ""
-                                            customerPhone = ""
-                                            customerAddress = ""
-                                            customerComment = ""
                                         },
                                         onError = { err ->
                                             isSendingOrder = false
                                             Toast.makeText(
                                                 context,
-                                                "Ошибка отправки: $err",
+                                                "Ошибка сохранения: $err",
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         }
@@ -3379,10 +3396,11 @@ fun buildOrderMap(
     }
 
     val subtotal = cartItems.sumOf { it.product.price * it.quantity }
+    val now = System.currentTimeMillis()
 
     return mapOf(
         "type" to "ORDER",
-        "createdAt" to System.currentTimeMillis(),
+        "createdAt" to now,
         "customerName" to customerName,
         "customerPhone" to customerPhone,
         "customerAddress" to customerAddress,
@@ -3392,6 +3410,8 @@ fun buildOrderMap(
         "discount" to discount,
         "subtotal" to subtotal,
         "total" to total,
+        "status" to "RECEIVED",
+        "statusUpdatedAt" to now,
         "items" to items
     )
 }

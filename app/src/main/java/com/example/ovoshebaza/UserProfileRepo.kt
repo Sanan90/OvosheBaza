@@ -28,6 +28,7 @@ data class OrderSummary(
     val total: Double,
     val itemsCount: Int,
     val channel: String,
+    val status: String,
     val items: List<OrderItem>
 )
 
@@ -120,6 +121,7 @@ fun loadUserOrders(
                 } ?: emptyList()
                 val itemsCount = items.size
                 val channel = doc.getString("channel") ?: ""
+                val status = doc.getString("status") ?: "RECEIVED"
 
                 OrderSummary(
                     orderId = doc.id,
@@ -127,6 +129,7 @@ fun loadUserOrders(
                     total = total,
                     itemsCount = itemsCount,
                     channel = channel,
+                    status = status,
                     items = items
                 )
             }
@@ -314,7 +317,7 @@ fun saveUserProfileFromOrder(
 fun saveOrderToHistory(
     order: Map<String, Any>,
     channel: String, // "TELEGRAM" / "WHATSAPP"
-    onDone: () -> Unit = {},
+    onDone: (String) -> Unit = {},
     onError: (String) -> Unit = {}
 ) {
     val user = FirebaseAuth.getInstance().currentUser
@@ -331,8 +334,10 @@ fun saveOrderToHistory(
     payload["orderId"] = ref.id
     payload["channel"] = channel
     if (!payload.containsKey("createdAt")) payload["createdAt"] = System.currentTimeMillis()
+    if (!payload.containsKey("status")) payload["status"] = "RECEIVED"
+    if (!payload.containsKey("statusUpdatedAt")) payload["statusUpdatedAt"] = System.currentTimeMillis()
 
     ref.set(payload)
-        .addOnSuccessListener { onDone() }
+        .addOnSuccessListener { onDone(ref.id) }
         .addOnFailureListener { e -> onError(e.message ?: "Не удалось сохранить заказ в историю") }
 }

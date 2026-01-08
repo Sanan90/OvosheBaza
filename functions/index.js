@@ -1,10 +1,14 @@
-const { onCall } = require("firebase-functions/v2/https");
+const { onCall, onRequest } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
 const { defineSecret, defineString } = require("firebase-functions/params");
+const admin = require("firebase-admin");
 
 const TELEGRAM_TOKEN = defineSecret("TELEGRAM_TOKEN");
 const TELEGRAM_CHAT_ID = defineString("TELEGRAM_CHAT_ID");
+const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
+
+admin.initializeApp();
 
 // Красивое число: убираем 0.30000000004 и лишние нули
 function fmtNum(n, digits = 3) {
@@ -84,6 +88,13 @@ exports.sendOrderToTelegram = onCall(
           throw new Error("В заказе нет items (пусто или не массив)");
         }
 
+        const uid = (data.uid || "").toString().trim();
+                const orderId = (data.orderId || "").toString().trim();
+                if (!uid || !orderId) {
+                  throw new Error("В заказе нет uid/orderId для кнопок");
+                }
+
+
         const customerName = (data.customerName || "").toString().trim();
         const customerPhone = (data.customerPhone || "").toString().trim();
         const customerAddress = (data.customerAddress || "").toString().trim();
@@ -119,21 +130,231 @@ exports.sendOrderToTelegram = onCall(
           `💵 Подитог: ${subtotal}\n` +
           `🚚 Доставка: ${deliveryFee}\n` +
           `🏷 Скидка: ${discount}\n` +
-          `💰 ИТОГО: ${total}`;
+           `💰 ИТОГО: ${total}\n\n` +
+                    `Статус: Получен`;
+
+                  data._replyMarkup = {
+                    inline_keyboard: [
+                      [
+                        { text: "✅ Принять", callback_data: `ACCEPT|${uid}|${orderId}` },
+                        { text: "❌ Отменить", callback_data: `CANCEL|${uid}|${orderId}` },
+                      ],
+                    ],
+                  };
       }
 
       const url = `https://api.telegram.org/bot${token}/sendMessage`;
 
-      const tgResp = await axios.post(url, {
+      const payload = {
         chat_id: chatId,
         text,
-      });
+      ...(data._replyMarkup ? { reply_markup: data._replyMarkup } : {}),
+            };
+
+            const tgResp = await axios.post(url, payload);
 
       logger.info("Telegram sent ok", tgResp.data);
       return { ok: true };
     } catch (e) {
       logger.error("sendOrderToTelegram error", e);
       throw new Error(e.message || String(e));
+    }
+  }
+);
+
+function baseOrderText(text) {
+  const lines = String(text || "").split("\n");
+  const filtered = lines.filter(
+    (line) =>
+      !line.startsWith("Статус:") &&
+      line.trim() !== "✅ Завершён" &&
+      line.trim() !== "❌ Заказ отменён"
+  );
+  return filtered.join("\n").trim();
+}
+
+function orderStatusLabel(status) {
+  switch (status) {
+    case "ACCEPTED":
+      return "Принят / собирается";
+    case "IN_TRANSIT":
+      return "В пути";
+    case "DONE":
+      return "✅ Завершён";
+    case "CANCELLED":
+      return "❌ Заказ отменён";
+    default:
+      return "Получен";
+  }
+}
+
+function replyMarkupForStatus(status, uid, orderId) {
+  switch (status) {
+    case "ACCEPTED":
+      return {
+        inline_keyboard: [
+          [
+            { text: "🚚 Заказ в пути", callback_data: `IN_TRANSIT|${uid}|${orderId}` },
+            { text: "❌ Отменить", callback_data: `CANCEL|${uid}|${orderId}` },
+          ],
+        ],
+      };
+    case "IN_TRANSIT":
+      return {
+        inline_keyboard: [
+          [
+            { text: "✅ Завершён", callback_data: `DONE|${uid}|${orderId}` },
+            { text: "❌ Отменить", callback_data: `CANCEL|${uid}|${orderId}` },
+          ],
+        ],
+      };
+    default:
+      return { inline_keyboard: [] };
+  }
+}
+
+async function answerCallbackQuery(token, callbackId, text) {
+  if (!callbackId) return;
+  const url = `https://api.telegram.org/bot${token}/answerCallbackQuery`;
+  await axios.post(url, {
+    callback_query_id: callbackId,
+    text,
+    show_alert: false,
+  });
+}
+
+async function editMessageText(token, chatId, messageId, text, replyMarkup) {
+  const url = `https://api.telegram.org/bot${token}/editMessageText`;
+  await axios.post(url, {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+}
+
+exports.telegramOrderStatusWebhook = onRequest(
+  {
+    secrets: [TELEGRAM_TOKEN, TELEGRAM_WEBHOOK_SECRET],
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      res.status(405).send("Method Not Allowed");
+      return;
+    }
+
+    try {
+      const secret = TELEGRAM_WEBHOOK_SECRET.value();
+      if (
+        secret &&
+        req.get("x-telegram-bot-api-secret-token") !== secret
+      ) {
+        res.status(403).send("Forbidden");
+        return;
+      }
+
+      const body = req.body || {};
+      const callback = body.callback_query;
+      if (!callback) {
+        res.status(200).send("ok");
+        return;
+      }
+
+      const token = TELEGRAM_TOKEN.value();
+      const chatId = callback.message?.chat?.id;
+      if (!token) throw new Error("TELEGRAM_TOKEN пустой");
+
+      if (String(chatId) !== String(TELEGRAM_CHAT_ID.value())) {
+        await answerCallbackQuery(token, callback.id, "Недоступно в этом чате");
+        res.status(200).send("ok");
+        return;
+      }
+
+      const data = (callback.data || "").toString();
+      const [action, uid, orderId] = data.split("|");
+      if (!action || !uid || !orderId) {
+        await answerCallbackQuery(token, callback.id, "Некорректные данные");
+        res.status(200).send("ok");
+        return;
+      }
+
+      const db = admin.firestore();
+      const orderRef = db.collection("users").doc(uid).collection("orders").doc(orderId);
+      const snapshot = await orderRef.get();
+
+      if (!snapshot.exists) {
+        await answerCallbackQuery(token, callback.id, "Заказ не найден");
+        res.status(200).send("ok");
+        return;
+      }
+
+      const currentStatus = snapshot.get("status") || "RECEIVED";
+      if (currentStatus === "DONE") {
+        await answerCallbackQuery(token, callback.id, "Заказ уже завершён");
+        res.status(200).send("ok");
+        return;
+      }
+
+      const now = Date.now();
+      const messageText = callback.message?.text || "";
+      const baseText = baseOrderText(messageText);
+      const messageId = callback.message?.message_id;
+
+      switch (action) {
+        case "ACCEPT": {
+          await orderRef.update({ status: "ACCEPTED", statusUpdatedAt: now });
+          const text = `${baseText}\n\nСтатус: ${orderStatusLabel("ACCEPTED")}`;
+          await editMessageText(
+            token,
+            chatId,
+            messageId,
+            text,
+            replyMarkupForStatus("ACCEPTED", uid, orderId)
+          );
+          await answerCallbackQuery(token, callback.id, "Заказ принят");
+          break;
+        }
+        case "IN_TRANSIT": {
+          await orderRef.update({ status: "IN_TRANSIT", statusUpdatedAt: now });
+          const text = `${baseText}\n\nСтатус: ${orderStatusLabel("IN_TRANSIT")}`;
+          await editMessageText(
+            token,
+            chatId,
+            messageId,
+            text,
+            replyMarkupForStatus("IN_TRANSIT", uid, orderId)
+          );
+          await answerCallbackQuery(token, callback.id, "Заказ в пути");
+          break;
+        }
+        case "DONE": {
+          await orderRef.update({ status: "DONE", statusUpdatedAt: now });
+          const text = `${baseText}\n\n✅ Завершён`;
+          await editMessageText(token, chatId, messageId, text, { inline_keyboard: [] });
+          await answerCallbackQuery(token, callback.id, "Заказ завершён");
+          break;
+        }
+        case "CANCEL": {
+          await orderRef.delete();
+          try {
+            await db.collection("orders").doc(orderId).delete();
+          } catch (e) {
+            logger.warn("Failed to delete from global orders collection", e);
+          }
+          const text = `${baseText}\n\n❌ Заказ отменён`;
+          await editMessageText(token, chatId, messageId, text, { inline_keyboard: [] });
+          await answerCallbackQuery(token, callback.id, "Заказ отменён");
+          break;
+        }
+        default: {
+          await answerCallbackQuery(token, callback.id, "Неизвестное действие");
+        }
+      }
+
+      res.status(200).send("ok");
+    } catch (e) {
+      logger.error("telegramOrderStatusWebhook error", e);
+      res.status(500).send("error");
     }
   }
 );
