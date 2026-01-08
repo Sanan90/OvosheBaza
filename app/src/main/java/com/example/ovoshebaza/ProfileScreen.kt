@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -18,9 +19,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,7 +47,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
@@ -63,13 +66,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 import androidx.compose.material3.AlertDialog
 
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+
 @Composable
 fun ProfileScreen(
     products: List<Product>,
     onAddToCart: (Product, Double) -> Unit,
     cartItems: List<CartItem>,
     onClearCart: () -> Unit,
-    onAuthRequested: () -> Unit
+    onAuthRequested: () -> Unit,
+    onOpenProduct: (String) -> Unit
 ) {
     val user = FirebaseAuth.getInstance().currentUser
     val dateFormat = remember {
@@ -82,10 +91,10 @@ fun ProfileScreen(
     var errorText by remember { mutableStateOf<String?>(null) }
     var addressExpanded by remember { mutableStateOf(false) }
     var newAddressInput by remember { mutableStateOf("") }
-    var ordersExpanded by remember { mutableStateOf(false) }
+    var ordersExpanded by rememberSaveable(user?.uid) { mutableStateOf(false) }
     var showReplaceDialog by remember { mutableStateOf(false) }
     var pendingOrder by remember { mutableStateOf<OrderSummary?>(null) }
-    val expandedOrders = remember { mutableStateMapOf<String, Boolean>() }
+    var expandedOrderIds by rememberSaveable(user?.uid) { mutableStateOf(setOf<String>()) }
 
     LaunchedEffect(user?.uid) {
         if (user == null) {
@@ -106,8 +115,14 @@ fun ProfileScreen(
                 isLoading = false
             }
         )
+    }
 
-        loadUserOrders(
+    DisposableEffect(user?.uid) {
+        if (user == null) {
+            return@DisposableEffect onDispose {}
+        }
+
+        val registration = listenUserOrders(
             onResult = { loaded ->
                 orders = loaded
             },
@@ -115,6 +130,9 @@ fun ProfileScreen(
                 errorText = error
             }
         )
+        onDispose {
+            registration?.remove()
+        }
     }
 
     if (user == null) {
@@ -144,7 +162,24 @@ fun ProfileScreen(
         return
     }
 
+    var savedIndex by rememberSaveable(user?.uid) { mutableStateOf(0) }
+    var savedOffset by rememberSaveable(user?.uid) { mutableStateOf(0) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = savedIndex,
+        initialFirstVisibleItemScrollOffset = savedOffset
+    )
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .distinctUntilChanged()
+            .collectLatest { (index, offset) ->
+                savedIndex = index
+                savedOffset = offset
+            }
+    }
+
+
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -351,7 +386,7 @@ fun ProfileScreen(
                                     )
                                 } else {
                                     orders.forEach { order ->
-                                        val isExpanded = expandedOrders[order.orderId] == true
+                                        val isExpanded = expandedOrderIds.contains(order.orderId)
                                         Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -364,7 +399,11 @@ fun ProfileScreen(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .clickable {
-                                                        expandedOrders[order.orderId] = !isExpanded
+                                                        expandedOrderIds = if (isExpanded) {
+                                                            expandedOrderIds - order.orderId
+                                                        } else {
+                                                            expandedOrderIds + order.orderId
+                                                        }
                                                     }
                                                     .padding(12.dp),
                                                 verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -436,6 +475,7 @@ fun ProfileScreen(
                                                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                                                             ) {
                                                                 order.items.forEach { item ->
+                                                                    val product = products.find { it.id == item.id }
                                                                     val unitLabel = when (item.unit.uppercase(Locale.getDefault())) {
                                                                         "KG" -> "кг"
                                                                         "PIECE" -> "шт"
@@ -443,7 +483,18 @@ fun ProfileScreen(
                                                                     }
                                                                     Text(
                                                                         text = "${item.name} — ${item.quantity} $unitLabel",
-                                                                        style = MaterialTheme.typography.bodySmall
+                                                                        style = MaterialTheme.typography.bodySmall,
+                                                                        modifier = Modifier.clickable(enabled = product != null) {
+                                                                            if (product == null) {
+                                                                                Toast.makeText(
+                                                                                    context,
+                                                                                    "Товар недоступен",
+                                                                                    Toast.LENGTH_SHORT
+                                                                                ).show()
+                                                                            } else {
+                                                                                onOpenProduct(product.id)
+                                                                            }
+                                                                        }
                                                                     )
                                                                 }
                                                             }

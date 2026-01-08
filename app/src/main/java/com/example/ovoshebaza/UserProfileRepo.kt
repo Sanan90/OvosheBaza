@@ -3,8 +3,10 @@ package com.example.ovoshebaza
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 
 data class UserProfile(
     val name: String = "",
@@ -98,47 +100,77 @@ fun loadUserOrders(
         .limit(limit.toLong())
         .get()
         .addOnSuccessListener { snapshot ->
-            val orders = snapshot.documents.map { doc ->
-                val createdAt = doc.getLong("createdAt") ?: 0L
-                val total = doc.getDouble("total") ?: 0.0
-                val rawItems = doc.get("items") as? List<*>
-                val items = rawItems?.mapNotNull { entry ->
-                    val map = entry as? Map<*, *> ?: return@mapNotNull null
-                    val id = map["id"]?.toString() ?: return@mapNotNull null
-                    val name = map["name"]?.toString() ?: "Товар"
-                    val quantity = (map["quantity"] as? Number)?.toDouble() ?: 0.0
-                    val unit = map["unit"]?.toString() ?: ""
-                    val price = (map["price"] as? Number)?.toDouble() ?: 0.0
-                    val sum = (map["sum"] as? Number)?.toDouble() ?: 0.0
-                    OrderItem(
-                        id = id,
-                        name = name,
-                        quantity = quantity,
-                        unit = unit,
-                        price = price,
-                        sum = sum
-                    )
-                } ?: emptyList()
-                val itemsCount = items.size
-                val channel = doc.getString("channel") ?: ""
-                val status = doc.getString("status") ?: "RECEIVED"
-
-                OrderSummary(
-                    orderId = doc.id,
-                    createdAt = createdAt,
-                    total = total,
-                    itemsCount = itemsCount,
-                    channel = channel,
-                    status = status,
-                    items = items
-                )
-            }
+            val orders = snapshot.documents.map { doc -> mapOrderSummary(doc) }
             onResult(orders)
         }
         .addOnFailureListener { e ->
             onError(e.message ?: "Не удалось загрузить список заказов")
         }
 }
+
+fun listenUserOrders(
+    limit: Int = 10,
+    onResult: (List<OrderSummary>) -> Unit,
+    onError: (String) -> Unit = {}
+): ListenerRegistration? {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onResult(emptyList())
+        return null
+    }
+
+    return FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+        .collection("orders")
+        .orderBy("createdAt", Query.Direction.DESCENDING)
+        .limit(limit.toLong())
+        .addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onError(error.message ?: "Не удалось загрузить список заказов")
+                return@addSnapshotListener
+            }
+            val orders = snapshot?.documents?.map { doc -> mapOrderSummary(doc) } ?: emptyList()
+            onResult(orders)
+        }
+}
+
+private fun mapOrderSummary(doc: DocumentSnapshot): OrderSummary {
+    val createdAt = doc.getLong("createdAt") ?: 0L
+    val total = doc.getDouble("total") ?: 0.0
+    val rawItems = doc.get("items") as? List<*>
+    val items = rawItems?.mapNotNull { entry ->
+        val map = entry as? Map<*, *> ?: return@mapNotNull null
+        val id = map["id"]?.toString() ?: return@mapNotNull null
+        val name = map["name"]?.toString() ?: "Товар"
+        val quantity = (map["quantity"] as? Number)?.toDouble() ?: 0.0
+        val unit = map["unit"]?.toString() ?: ""
+        val price = (map["price"] as? Number)?.toDouble() ?: 0.0
+        val sum = (map["sum"] as? Number)?.toDouble() ?: 0.0
+        OrderItem(
+            id = id,
+            name = name,
+            quantity = quantity,
+            unit = unit,
+            price = price,
+            sum = sum
+        )
+    } ?: emptyList()
+    val itemsCount = items.size
+    val channel = doc.getString("channel") ?: ""
+    val status = doc.getString("status") ?: "RECEIVED"
+
+    return OrderSummary(
+        orderId = doc.id,
+        createdAt = createdAt,
+        total = total,
+        itemsCount = itemsCount,
+        channel = channel,
+        status = status,
+        items = items
+    )
+}
+
 
     fun saveUserName(
 name: String,

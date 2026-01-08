@@ -188,6 +188,58 @@ function orderStatusLabel(status) {
   }
 }
 
+function orderStatusPushLabel(status) {
+  switch (status) {
+    case "RECEIVED":
+      return "получен";
+    case "ACCEPTED":
+      return "принят и собирается";
+    case "IN_TRANSIT":
+      return "в пути";
+    case "DONE":
+      return "завершён";
+    case "CANCELLED":
+      return "заказ отменён";
+    default:
+      return "получен";
+  }
+}
+
+async function sendStatusPush(db, uid, orderId, status) {
+  const userSnap = await db.collection("users").doc(uid).get();
+  if (!userSnap.exists) return;
+  const tokens = userSnap.get("fcmTokens");
+  if (!Array.isArray(tokens) || tokens.length === 0) return;
+
+  const label = orderStatusPushLabel(status);
+  const response = await admin.messaging().sendEachForMulticast({
+    tokens,
+    notification: {
+      title: "Статус заказа изменён",
+      body: `Заказ №${orderId}: ${label}`,
+    },
+  });
+
+  const invalidTokens = [];
+  response.responses.forEach((resp, index) => {
+    if (resp.success) return;
+    const code = resp.error?.code;
+    if (
+      code === "messaging/invalid-registration-token" ||
+      code === "messaging/registration-token-not-registered"
+    ) {
+      invalidTokens.push(tokens[index]);
+    }
+  });
+
+  if (invalidTokens.length > 0) {
+    await db.collection("users").doc(uid).update({
+      fcmTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens),
+    });
+  }
+}
+
+
 function replyMarkupForStatus(status, uid, orderId) {
   switch (status) {
     case "ACCEPTED":
@@ -311,6 +363,7 @@ exports.telegramOrderStatusWebhook = onRequest(
             text,
             replyMarkupForStatus("ACCEPTED", uid, orderId)
           );
+          await sendStatusPush(db, uid, orderId, "ACCEPTED");
           await answerCallbackQuery(token, callback.id, "Заказ принят");
           break;
         }
@@ -324,6 +377,7 @@ exports.telegramOrderStatusWebhook = onRequest(
             text,
             replyMarkupForStatus("IN_TRANSIT", uid, orderId)
           );
+          await sendStatusPush(db, uid, orderId, "IN_TRANSIT");
           await answerCallbackQuery(token, callback.id, "Заказ в пути");
           break;
         }
@@ -331,11 +385,13 @@ exports.telegramOrderStatusWebhook = onRequest(
           await orderRef.update({ status: "DONE", statusUpdatedAt: now });
           const text = `${baseText}\n\n✅ Завершён`;
           await editMessageText(token, chatId, messageId, text, { inline_keyboard: [] });
+          await sendStatusPush(db, uid, orderId, "DONE");
           await answerCallbackQuery(token, callback.id, "Заказ завершён");
           break;
         }
         case "CANCEL": {
           await orderRef.delete();
+          await sendStatusPush(db, uid, orderId, "CANCELLED");
           try {
             await db.collection("orders").doc(orderId).delete();
           } catch (e) {

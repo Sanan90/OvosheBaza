@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -154,6 +155,7 @@ fun AppRoot() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VeggieShopApp() {
+    NotificationSetup()
     val navController = rememberNavController()
 
     val shopViewModel: ShopViewModel = viewModel()
@@ -629,7 +631,10 @@ fun AppNavHost(
                 onAddToCart = onAddToCart,
                 cartItems = cartItems,
                 onClearCart = onClearCart,
-                onAuthRequested = { navController.navigate("auth") }
+                onAuthRequested = { navController.navigate("auth") },
+                onOpenProduct = { productId ->
+                    navController.navigate("product/$productId")
+                }
             )
         }
 
@@ -1503,12 +1508,25 @@ fun ProductCardLarge(
                 // ✅ чтобы клик по корзине НЕ открывал детали:
                 FilledTonalIconButton(
                     onClick = { showQuantityDialog = true },
+                    enabled = product.inStock,
+                    colors = IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = if (product.inStock) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.errorContainer
+                        },
+                        contentColor = if (product.inStock) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        }
+                    ),
                     modifier = Modifier
                         .padding(0.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = "Добавить в корзину"
+                        contentDescription = if (product.inStock) "Добавить в корзину" else "Нет в наличии"
                     )
                 }
             }
@@ -1553,7 +1571,7 @@ fun CartScreen(
     // Считаем примерную сумму заказа
     val itemsSubtotal = cartItems.sumOf { it.product.price * it.quantity }
     val isFreeDelivery = itemsSubtotal >= 1500.0
-    val deliveryFee = if (isFreeDelivery) 0.0 else 150.0
+    val deliveryFee = if (isFreeDelivery) 0.0 else DELIVERY_FEE_RUB
     val paymentDiscountPercent = 0.05
 
 
@@ -1880,82 +1898,7 @@ fun CartScreen(
                         },
                         enabled = !isSendingOrder
                     ) {
-                        Text("Telegram")
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    TextButton(
-                        onClick = {
-                            when {
-                                customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
-                                customerPhone.isBlank() -> errorText =
-                                    "Пожалуйста, укажите телефон."
-
-                                customerAddress.isBlank() -> errorText =
-                                    "Пожалуйста, укажите адрес доставки."
-
-                                else -> {
-                                    errorText = null
-                                    isSendingOrder = true
-
-                                    val discount = if (paymentMethod == PaymentMethod.CASH) {
-                                        itemsSubtotal * paymentDiscountPercent
-                                    } else {
-                                        0.0
-                                    }
-
-                                    val total = itemsSubtotal - discount + deliveryFee
-
-                                    val message = buildOrderMessage(
-                                        cartItems = cartItems,
-                                        customerName = customerName,
-                                        customerPhone = customerPhone,
-                                        customerAddress = customerAddress,
-                                        comment = customerComment,
-                                        paymentMethod = paymentMethod,
-                                        deliveryFee = deliveryFee,
-                                        discount = discount,
-                                        total = total
-                                    )
-
-                                    // ✅ 1) Собираем orderMap (как для Telegram)
-                                    val order = buildOrderMap(
-                                        cartItems = cartItems,
-                                        customerName = customerName,
-                                        customerPhone = customerPhone,
-                                        customerAddress = customerAddress,
-                                        comment = customerComment,
-                                        paymentMethod = paymentMethod,
-                                        deliveryFee = deliveryFee,
-                                        discount = discount,
-                                        total = total
-                                    )
-
-                                    // ✅ 2) Сохраняем профиль пользователя (имя/телефон/адрес)
-                                    saveUserProfileFromOrder(
-                                        name = customerName,
-                                        phone = customerPhone,
-                                        address = customerAddress
-                                    )
-
-                                    // ✅ 3) Сохраняем заказ в историю
-                                    saveOrderToHistory(order, "WHATSAPP")
-
-                                    // ✅ 4) Отправляем в WhatsApp (как раньше)
-                                    sendOrderViaWhatsApp(context, message, "+79687008070")
-
-                                    showOrderDialog = false
-                                    isSendingOrder = false
-
-                                    // Не очищаем имя/телефон/адрес — они должны остаться для следующего заказа
-                                    customerComment = ""
-                                }
-                            }
-                        },
-                        enabled = !isSendingOrder
-                    ) {
-                        Text("WhatsApp")
+                        Text("Сделать заказ")
                     }
                 }
             }
@@ -2332,8 +2275,12 @@ fun ProductDetailsScreen(
                         )
                     }
 
-                    Button(onClick = { showQtyDialog = true }) {
-                        Text("В корзину")
+                    val canAddToCart = product.inStock
+                    Button(
+                        onClick = { showQtyDialog = true },
+                        enabled = canAddToCart
+                    ) {
+                        Text(if (canAddToCart) "В корзину" else "Товара нет в наличии")
                     }
                 }
             }
@@ -3321,58 +3268,7 @@ fun formatQuantity(value: Double): String {
     }
 }
 
-// Собираем текст заказа для отправки в WhatsApp
-fun buildOrderMessage(
-    cartItems: List<CartItem>,
-    customerName: String,
-    customerPhone: String,
-    customerAddress: String,
-    comment: String,
-    paymentMethod: PaymentMethod,
-    deliveryFee: Double,
-    discount: Double,
-    total: Double
-): String {
-    val sb = StringBuilder()
-
-    sb.append("Заказ из приложения \"Мой овощной магазин\"\n\n")
-
-    sb.append("Товары:\n")
-
-    cartItems.forEachIndexed { index, item ->
-        val lineNumber = index + 1
-        val unitLabel = when (item.product.unit) {
-            UnitType.KG -> "кг"
-            UnitType.PIECE -> "шт"
-        }
-
-        sb.append("$lineNumber) ${item.product.name} — ${item.quantity} $unitLabel × ${item.product.price.toInt()} ₽\n")
-    }
-
-    val subtotal = cartItems.sumOf { it.product.price * it.quantity }
-
-    sb.append("\nТовары: ${subtotal.toInt()} ₽\n")
-    if (discount > 0.0) {
-        sb.append("Скидка за наличные: -${discount.toInt()} ₽\n")
-    }
-    sb.append(if (deliveryFee > 0.0) "Доставка: 200 ₽\n" else "Доставка: бесплатно\n")
-    sb.append("Итого: ~ ${total.toInt()} ₽\n")
-    sb.append("(Фактическая сумма может немного отличаться из-за точного веса товара)\n\n")
-
-    sb.append("Данные клиента:\n")
-    sb.append("Имя: $customerName\n")
-    sb.append("Телефон: $customerPhone\n")
-    sb.append("Адрес: $customerAddress\n")
-    sb.append("Оплата: ${paymentMethod.label}\n")
-
-    if (comment.isNotBlank()) {
-        sb.append("Комментарий: $comment\n")
-    }
-
-    return sb.toString()
-}
-
-
+// Собираем данные заказа
 fun buildOrderMap(
     cartItems: List<CartItem>,
     customerName: String,
@@ -3620,34 +3516,6 @@ fun sendOrderViaTelegram(context: android.content.Context, message: String) {
             "Не удалось открыть Telegram или браузер для ссылки.",
             Toast.LENGTH_LONG
         ).show()
-    }
-}
-
-
-fun sendOrderViaWhatsApp(context: Context, message: String, phoneE164: String) {
-    try {
-        // WhatsApp использует номер без "+"
-        val phone = phoneE164.replace("+", "").trim()
-
-        val encodedText = Uri.encode(message)
-        val uri = Uri.parse("https://wa.me/$phone?text=$encodedText")
-
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-
-        // Попробуем открыть именно WhatsApp (если установлен)
-        intent.setPackage("com.whatsapp")
-
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        // Если WhatsApp не открылся, пробуем через браузер (wa.me откроет WhatsApp если может)
-        try {
-            val phone = phoneE164.replace("+", "").trim()
-            val encodedText = Uri.encode(message)
-            val uri = Uri.parse("https://wa.me/$phone?text=$encodedText")
-            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (_: Exception) {
-            Toast.makeText(context, "Не удалось открыть WhatsApp или браузер", Toast.LENGTH_SHORT).show()
-        }
     }
 }
 
