@@ -23,10 +23,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -84,8 +84,39 @@ fun ProfileScreen(
     val dateFormat = remember {
         SimpleDateFormat("dd.MM.yyyy, HH:mm", Locale.getDefault())
     }
+    val profileSaver = remember {
+        listSaver<UserProfile?, Any>(
+            save = { stored ->
+                if (stored == null) {
+                    emptyList()
+                } else {
+                    listOf(
+                        stored.name,
+                        stored.phone,
+                        stored.addresses,
+                        stored.lastAddress
+                    )
+                }
+            },
+            restore = { restored ->
+                if (restored.isEmpty()) {
+                    null
+                } else {
+                    @Suppress("UNCHECKED_CAST")
+                    UserProfile(
+                        name = restored[0] as String,
+                        phone = restored[1] as String,
+                        addresses = restored[2] as List<String>,
+                        lastAddress = restored[3] as String
+                    )
+                }
+            }
+        )
+    }
     val context = LocalContext.current
-    var profile by remember { mutableStateOf<UserProfile?>(null) }
+    var profile by rememberSaveable(user?.uid, stateSaver = profileSaver) {
+        mutableStateOf<UserProfile?>(null)
+    }
     var orders by remember { mutableStateOf<List<OrderSummary>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -102,7 +133,7 @@ fun ProfileScreen(
             return@LaunchedEffect
         }
 
-        isLoading = true
+        isLoading = profile == null
         errorText = null
 
         loadUserProfile(
