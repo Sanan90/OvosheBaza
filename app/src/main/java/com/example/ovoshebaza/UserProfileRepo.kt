@@ -34,6 +34,31 @@ data class OrderSummary(
     val items: List<OrderItem>
 )
 
+object UserProfileCache {
+    private val profiles = mutableMapOf<String, UserProfile?>()
+
+    fun get(uid: String): UserProfile? = profiles[uid]
+
+    fun set(uid: String, profile: UserProfile?) {
+        profiles[uid] = profile
+    }
+}
+
+fun getCachedUserProfile(uid: String?): UserProfile? {
+    if (uid.isNullOrBlank()) {
+        return null
+    }
+    return UserProfileCache.get(uid)
+}
+
+fun setCachedUserProfile(uid: String?, profile: UserProfile?) {
+    if (uid.isNullOrBlank()) {
+        return
+    }
+    UserProfileCache.set(uid, profile)
+}
+
+
 fun loadUserProfile(
     onResult: (UserProfile?) -> Unit,
     onError: (String) -> Unit = {}
@@ -49,32 +74,9 @@ fun loadUserProfile(
         .document(user.uid)
         .get()
         .addOnSuccessListener { doc ->
-            if (!doc.exists()) {
-                onResult(null)
-                return@addOnSuccessListener
-            }
-            val storedAddress = (doc.getString("address") ?: "").trim()
-            val addresses = (doc.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
-                ?.filter { it.isNotBlank() }
-                ?.distinct()
-                ?: emptyList()
-            val mergedAddresses = if (storedAddress.isNotBlank() && !addresses.contains(storedAddress)) {
-                addresses + storedAddress
-            } else {
-                addresses
-            }
-            val lastAddress = (doc.getString("lastAddress") ?: "").trim().ifBlank {
-                storedAddress.ifBlank { mergedAddresses.lastOrNull().orEmpty() }
-            }
-
-            onResult(
-                UserProfile(
-                    name = (doc.getString("name") ?: "").trim(),
-                    phone = (doc.getString("phone") ?: "").trim(),
-                    addresses = mergedAddresses,
-                    lastAddress = lastAddress
-                )
-            )
+            val mapped = mapUserProfile(doc)
+            setCachedUserProfile(user.uid, mapped)
+            onResult(mapped)
         }
         .addOnFailureListener { e ->
             onError(e.message ?: "Не удалось загрузить профиль")
@@ -133,6 +135,56 @@ fun listenUserOrders(
             val orders = snapshot?.documents?.map { doc -> mapOrderSummary(doc) } ?: emptyList()
             onResult(orders)
         }
+}
+
+fun listenUserProfile(
+    onResult: (UserProfile?) -> Unit,
+    onError: (String) -> Unit = {}
+): ListenerRegistration? {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onResult(null)
+        return null
+    }
+
+    return FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+        .addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                onError(error.message ?: "Не удалось загрузить профиль")
+                return@addSnapshotListener
+            }
+            val mapped = snapshot?.let { mapUserProfile(it) }
+            setCachedUserProfile(user.uid, mapped)
+            onResult(mapped)
+        }
+}
+
+private fun mapUserProfile(doc: DocumentSnapshot): UserProfile? {
+    if (!doc.exists()) {
+        return null
+    }
+    val storedAddress = (doc.getString("address") ?: "").trim()
+    val addresses = (doc.get("addresses") as? List<*>)?.mapNotNull { it?.toString()?.trim() }
+        ?.filter { it.isNotBlank() }
+        ?.distinct()
+        ?: emptyList()
+    val mergedAddresses = if (storedAddress.isNotBlank() && !addresses.contains(storedAddress)) {
+        addresses + storedAddress
+    } else {
+        addresses
+    }
+    val lastAddress = (doc.getString("lastAddress") ?: "").trim().ifBlank {
+        storedAddress.ifBlank { mergedAddresses.lastOrNull().orEmpty() }
+    }
+
+    return UserProfile(
+        name = (doc.getString("name") ?: "").trim(),
+        phone = (doc.getString("phone") ?: "").trim(),
+        addresses = mergedAddresses,
+        lastAddress = lastAddress
+    )
 }
 
 private fun mapOrderSummary(doc: DocumentSnapshot): OrderSummary {

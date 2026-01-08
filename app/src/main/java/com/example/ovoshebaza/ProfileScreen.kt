@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,29 +117,30 @@ fun ProfileScreen(
         )
     }
     val context = LocalContext.current
+    val cachedProfile = getCachedUserProfile(user?.uid)
     var profile by rememberSaveable(user?.uid, stateSaver = profileSaver) {
-        mutableStateOf<UserProfile?>(null)
+        mutableStateOf<UserProfile?>(cachedProfile)
     }
     var orders by remember { mutableStateOf<List<OrderSummary>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(profile == null) }
     var errorText by remember { mutableStateOf<String?>(null) }
-    var addressExpanded by remember { mutableStateOf(false) }
-    var newAddressInput by remember { mutableStateOf("") }
+    var addressExpanded by rememberSaveable(user?.uid) { mutableStateOf(false) }
+    var newAddressInput by rememberSaveable(user?.uid) { mutableStateOf("") }
     var ordersExpanded by rememberSaveable(user?.uid) { mutableStateOf(false) }
     var showReplaceDialog by remember { mutableStateOf(false) }
     var pendingOrder by remember { mutableStateOf<OrderSummary?>(null) }
     var expandedOrderIds by rememberSaveable(user?.uid) { mutableStateOf(setOf<String>()) }
 
-    LaunchedEffect(user?.uid) {
+    DisposableEffect(user?.uid) {
         if (user == null) {
             isLoading = false
-            return@LaunchedEffect
+            return@DisposableEffect onDispose {}
         }
 
         isLoading = profile == null
         errorText = null
 
-        loadUserProfile(
+        val profileRegistration = listenUserProfile(
             onResult = { loaded ->
                 profile = loaded
                 isLoading = false
@@ -146,12 +150,6 @@ fun ProfileScreen(
                 isLoading = false
             }
         )
-    }
-
-    DisposableEffect(user?.uid) {
-        if (user == null) {
-            return@DisposableEffect onDispose {}
-        }
 
         val registration = listenUserOrders(
             onResult = { loaded ->
@@ -162,8 +160,13 @@ fun ProfileScreen(
             }
         )
         onDispose {
+            profileRegistration?.remove()
             registration?.remove()
         }
+    }
+
+    LaunchedEffect(user?.uid, profile) {
+        setCachedUserProfile(user?.uid, profile)
     }
 
     if (user == null) {
@@ -245,8 +248,20 @@ fun ProfileScreen(
                 Text(
                     text = profile?.name?.ifBlank { "Без имени" } ?: "Без имени",
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimary
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.alpha(if (profile == null && isLoading) 0f else 1f)
                 )
+                if (profile == null && isLoading) {
+                    SkeletonLine(
+                        modifier = Modifier
+                            .height(22.dp)
+                            .width(140.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                            )
+                    )
+                }
             }
         }
 
@@ -285,12 +300,38 @@ fun ProfileScreen(
                     val addressText = profile?.lastAddress?.ifBlank { "Адрес не указан" } ?: "Адрес не указан"
                     MenuRow(
                         icon = Icons.Default.Phone,
-                        title = phoneText
+                        title = phoneText,
+                        titleContent = if (profile == null && isLoading) {
+                            {
+                                SkeletonLine(
+                                    modifier = Modifier
+                                        .height(16.dp)
+                                        .width(180.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                )
+                            }
+                        } else {
+                            null
+                        }
                     )
                     Divider()
                     MenuRow(
                         icon = Icons.Default.LocationOn,
                         title = addressText,
+                        titleContent = if (profile == null && isLoading) {
+                            {
+                                SkeletonLine(
+                                    modifier = Modifier
+                                        .height(16.dp)
+                                        .width(200.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                                )
+                            }
+                        } else {
+                            null
+                        },
                         onClick = { addressExpanded = !addressExpanded }
                     )
                     AnimatedVisibility(
@@ -624,6 +665,7 @@ private fun addOrderToCart(
 private fun MenuRow(
     icon: ImageVector,
     title: String,
+    titleContent: @Composable (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
@@ -645,11 +687,25 @@ private fun MenuRow(
                 imageVector = icon,
                 contentDescription = null
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            if (titleContent != null) {
+                titleContent()
+            } else {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
         }
         trailing?.invoke()
     }
+}
+
+@Composable
+private fun SkeletonLine(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.surfaceVariant
+) {
+    Box(
+        modifier = modifier.background(color)
+    )
 }
