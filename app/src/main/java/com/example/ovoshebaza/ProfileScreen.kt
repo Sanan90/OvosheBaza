@@ -79,6 +79,9 @@ fun ProfileScreen(
     products: List<Product>,
     onAddToCart: (Product, Double) -> Unit,
     cartItems: List<CartItem>,
+    orders: List<OrderSummary>,
+    isOrdersLoading: Boolean,
+    ordersError: String?,
     onClearCart: () -> Unit,
     onAuthRequested: () -> Unit,
     onOpenProduct: (String) -> Unit
@@ -121,7 +124,6 @@ fun ProfileScreen(
     var profile by rememberSaveable(user?.uid, stateSaver = profileSaver) {
         mutableStateOf<UserProfile?>(cachedProfile)
     }
-    var orders by remember { mutableStateOf<List<OrderSummary>>(emptyList()) }
     var isLoading by remember { mutableStateOf(profile == null) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var addressExpanded by rememberSaveable(user?.uid) { mutableStateOf(false) }
@@ -151,17 +153,8 @@ fun ProfileScreen(
             }
         )
 
-        val registration = listenUserOrders(
-            onResult = { loaded ->
-                orders = loaded
-            },
-            onError = { error ->
-                errorText = error
-            }
-        )
         onDispose {
             profileRegistration?.remove()
-            registration?.remove()
         }
     }
 
@@ -276,10 +269,11 @@ fun ProfileScreen(
             }
         }
 
-        if (errorText != null) {
+        val combinedErrorText = errorText ?: ordersError
+        if (combinedErrorText != null) {
             item {
                 Text(
-                    text = errorText ?: "",
+                    text = combinedErrorText,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -451,7 +445,12 @@ fun ProfileScreen(
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                if (orders.isEmpty()) {
+                                if (isOrdersLoading) {
+                                    Text(
+                                        text = "Загрузка заказов...",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                } else if (orders.isEmpty()) {
                                     Text(
                                         text = "Пока нет заказов",
                                         style = MaterialTheme.typography.bodySmall

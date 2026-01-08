@@ -598,6 +598,36 @@ fun AppNavHost(
     onUpdateProduct: (Product) -> Unit,
     onAddProduct: (Product) -> Unit
 ) {
+    val user = FirebaseAuth.getInstance().currentUser
+    var orders by remember { mutableStateOf<List<OrderSummary>>(emptyList()) }
+    var ordersError by remember { mutableStateOf<String?>(null) }
+    var isOrdersLoading by remember { mutableStateOf(false) }
+
+    DisposableEffect(user?.uid) {
+        if (user == null) {
+            orders = emptyList()
+            ordersError = null
+            isOrdersLoading = false
+            return@DisposableEffect onDispose {}
+        }
+
+        ordersError = null
+        isOrdersLoading = true
+        val registration = listenUserOrders(
+            onResult = { loaded ->
+                orders = loaded
+                isOrdersLoading = false
+            },
+            onError = { error ->
+                ordersError = error
+                isOrdersLoading = false
+            }
+        )
+        onDispose {
+            registration?.remove()
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = Screen.Catalog.route,
@@ -630,6 +660,9 @@ fun AppNavHost(
                 products = products,
                 onAddToCart = onAddToCart,
                 cartItems = cartItems,
+                orders = orders,
+                isOrdersLoading = isOrdersLoading,
+                ordersError = ordersError,
                 onClearCart = onClearCart,
                 onAuthRequested = { navController.navigate("auth") },
                 onOpenProduct = { productId ->
