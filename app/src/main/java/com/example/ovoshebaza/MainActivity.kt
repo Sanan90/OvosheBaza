@@ -148,7 +148,18 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot() {
-    VeggieShopApp()
+    var showSplash by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        delay(1200)
+        showSplash = false
+    }
+
+    if (showSplash) {
+        SplashScreen()
+    } else {
+        VeggieShopApp()
+    }
 }
 
 
@@ -582,6 +593,20 @@ fun VeggieShopApp() {
     }
 }
 
+@Composable
+fun SplashScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.splash_screen),
+            contentDescription = "Экран загрузки",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
 
 
 
