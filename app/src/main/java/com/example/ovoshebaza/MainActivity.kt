@@ -1504,9 +1504,7 @@ fun ProductCardLarge(
             )
         }
     }
-    BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 180.dp
         val cardMinHeight = if (isCompact) 210.dp else 240.dp
         val imageHeight = if (isCompact) 120.dp else 150.dp
@@ -1515,34 +1513,29 @@ fun ProductCardLarge(
         val quickButtonSpacing = if (isCompact) 2.dp else 4.dp
         val overlaySidePadding = if (isCompact) 4.dp else 8.dp
         val perSideCount = quickButtonCount / 2
-        val availablePerSide = (maxWidth -
-                overlaySidePadding * 2 -
-                cartButtonSize -
-                quickButtonSpacing * 2) / 2
+        val availablePerSide = (maxWidth - overlaySidePadding * 2 - cartButtonSize - quickButtonSpacing * 2) / 2
         val quickButtonSize = minOf(
             if (isCompact) 34.dp else 40.dp,
-            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount)
-                .coerceAtLeast(22.dp)
+            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount).coerceAtLeast(22.dp)
         )
-        val controlsHeight = cartButtonSize + 10.dp
+        // Смещения по вертикали для внутренних и внешних кнопок (дуга)
+        val innerOffset = quickButtonSize * 0.3f   // ближние к корзине кнопки - небольшой подъем
+        val outerOffset = quickButtonSize * 0.6f   // крайние кнопки - больший подъем
+        // Высота нижней области, увеличена с учетом дуги, чтобы кнопки не перекрывали текст
+        val controlsHeight = cartButtonSize + outerOffset + 10.dp
         val buttonInsetRatio = 0.8f
         val buttonYOffset = cartButtonSize * (1f - buttonInsetRatio)
 
-        Box(
-            modifier = Modifier.fillMaxWidth()
-            ) {
-
+        Box(modifier = Modifier.fillMaxWidth()) {
             Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = cardMinHeight)
-                        .clickable { onOpenDetails() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = cardMinHeight)
+                    .clickable { onOpenDetails() },
                 shape = cardShape,
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFFF6EBD4)
-                ),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF6EBD4)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                ) {
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1550,78 +1543,71 @@ fun ProductCardLarge(
                         .padding(bottom = controlsHeight),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(imageHeight)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.White)
-                        ) {
-                            if (product.imageUrl != null) {
-                                Box {
-                                    AsyncImage(
-                                        model = product.imageUrl,
-                                        contentDescription = product.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Brush.verticalGradient(
-                                                    colors = listOf(
-                                                        Color.Transparent,
-                                                        Color.Black.copy(alpha = 0.16f)
-                                                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(imageHeight)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                    ) {
+                        if (product.imageUrl != null) {
+                            Box {
+                                AsyncImage(
+                                    model = product.imageUrl,
+                                    contentDescription = product.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    Color.Black.copy(alpha = 0.16f)
                                                 )
                                             )
-                                    )
-                                }
-                            } else {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("Фото", style = MaterialTheme.typography.bodySmall)
-                                }
+                                        )
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Фото", style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = product.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 2,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.height(48.dp)
                     )
-
                     Text(
                         text = categoryLabel(product.category),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(modifier = Modifier.height(8.dp))
-
                     Text(
                         text = buildString {
                             append(product.price.toInt())
                             append(" ₽ / ")
                             append(if (product.unit == UnitType.KG) "кг" else "шт")
                         },
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         textAlign = TextAlign.Center
                     )
                 }
             }
 
+            // Блок кнопок корзины и изменения веса
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -1629,6 +1615,7 @@ fun ProductCardLarge(
                     .fillMaxWidth()
                     .padding(horizontal = overlaySidePadding)
             ) {
+                // Центральная кнопка корзины (без изменений)
                 CartButton(
                     enabled = product.inStock,
                     onClick = { isQuickAddExpanded = !isQuickAddExpanded },
@@ -1637,11 +1624,11 @@ fun ProductCardLarge(
                 )
 
                 if (isQuickAddExpanded) {
-
-                        val leftButtons = quickSteps.take(quickSteps.size / 2)
-                        val rightButtons = quickSteps.takeLast(quickSteps.size / 2)
+                    val leftButtons = quickSteps.take(quickSteps.size / 2)
+                    val rightButtons = quickSteps.takeLast(quickSteps.size / 2)
                     val sidePadding = cartButtonSize / 2 + quickButtonSpacing
 
+                    // Левая группа кнопок (убавление веса)
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterStart)
@@ -1649,7 +1636,7 @@ fun ProductCardLarge(
                         horizontalArrangement = Arrangement.spacedBy(quickButtonSpacing),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        leftButtons.forEach { step ->
+                        leftButtons.forEachIndexed { index, step ->
                             QuickStepButton(
                                 step = step,
                                 product = product,
@@ -1657,11 +1644,17 @@ fun ProductCardLarge(
                                 currentQuantity = currentQuantity,
                                 onAddToCart = onAddToCart,
                                 onUpdateQuantity = onUpdateQuantity,
-                                size = quickButtonSize
+                                size = quickButtonSize,
+                                modifier = if (leftButtons.size > 1) {
+                                    if (index == 0) Modifier.offset(y = -outerOffset) else Modifier.offset(y = -innerOffset)
+                                } else {
+                                    Modifier.offset(y = -innerOffset)
+                                }
                             )
                         }
-                        }
+                    }
 
+                    // Правая группа кнопок (прибавление веса)
                     Row(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
@@ -1669,7 +1662,7 @@ fun ProductCardLarge(
                         horizontalArrangement = Arrangement.spacedBy(quickButtonSpacing),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        rightButtons.forEach { step ->
+                        rightButtons.forEachIndexed { index, step ->
                             QuickStepButton(
                                 step = step,
                                 product = product,
@@ -1677,21 +1670,25 @@ fun ProductCardLarge(
                                 currentQuantity = currentQuantity,
                                 onAddToCart = onAddToCart,
                                 onUpdateQuantity = onUpdateQuantity,
-                                size = quickButtonSize
+                                size = quickButtonSize,
+                                modifier = if (rightButtons.size > 1) {
+                                    if (index == rightButtons.lastIndex) Modifier.offset(y = -outerOffset) else Modifier.offset(y = -innerOffset)
+                                } else {
+                                    Modifier.offset(y = -innerOffset)
+                                }
                             )
                         }
-                        }
                     }
+                }
             }
         }
     }
 }
 
-private data class QuickStep(
-    val label: String,
-    val delta: Double
-)
+// Описание шага быстрого изменения веса
+private data class QuickStep(val label: String, val delta: Double)
 
+// Компонент кнопки изменения веса (круглая, выпуклая)
 @Composable
 private fun QuickStepButton(
     step: QuickStep,
@@ -1700,11 +1697,11 @@ private fun QuickStepButton(
     currentQuantity: Double,
     onAddToCart: (Product, Double) -> Unit,
     onUpdateQuantity: (String, Double) -> Unit,
-    size: Dp
+    size: Dp,
+    modifier: Modifier = Modifier
 ) {
-
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .size(size)
             .clip(CircleShape)
             .clickable(enabled = enabled) {
@@ -1734,6 +1731,7 @@ private fun QuickStepButton(
     }
 }
 
+// Компонент кнопки корзины (без изменений)
 @Composable
 private fun CartButton(
     enabled: Boolean,
@@ -1764,6 +1762,13 @@ private fun CartButton(
         }
     }
 }
+
+
+
+
+
+
+
 
 private fun categoryLabel(category: ProductCategory): String =
     when (category) {
