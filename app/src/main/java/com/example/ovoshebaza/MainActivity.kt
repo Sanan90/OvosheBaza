@@ -117,6 +117,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
 
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.People
@@ -661,7 +662,9 @@ fun AppNavHost(
         composable(Screen.Catalog.route) {
             CatalogScreen(
                 products = products,
+                cartItems = cartItems,
                 onAddToCart = onAddToCart,
+                onUpdateQuantity = onUpdateQuantity,
                 onOpenDetails = { product ->
                     navController.navigate("product/${product.id}")
                 }
@@ -781,7 +784,9 @@ enum class PaymentMethod(val label: String) {
 @Composable
 fun CatalogScreen(
     products: List<Product>,
+    cartItems: List<CartItem>,
     onAddToCart: (Product, Double) -> Unit,
+    onUpdateQuantity: (String, Double) -> Unit,
     onOpenDetails: (Product) -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.All) }
@@ -935,9 +940,12 @@ fun CatalogScreen(
 
             // 4) Сетка товаров
             items(filteredProducts, key = { it.id }) { product ->
+                val currentQuantity = cartItems.firstOrNull { it.product.id == product.id }?.quantity ?: 0.0
                 ProductCardLarge(
                     product = product,
+                    currentQuantity = currentQuantity,
                     onAddToCart = onAddToCart,
+                    onUpdateQuantity = onUpdateQuantity,
                     onOpenDetails = { onOpenDetails(product) }
                 )
             }
@@ -1473,29 +1481,54 @@ fun QuantityPickerDialog(
 @Composable
 fun ProductCardLarge(
     product: Product,
+    currentQuantity: Double,
     onAddToCart: (Product, Double) -> Unit,
+    onUpdateQuantity: (String, Double) -> Unit,
     onOpenDetails: () -> Unit
 ) {
     var showQuantityDialog by remember { mutableStateOf(false) }
+    var isQuickAddExpanded by remember { mutableStateOf(false) }
+    val cardShape = RoundedCornerShape(28.dp)
+    val quickSteps = remember(product.unit) {
+        if (product.unit == UnitType.KG) {
+            listOf(
+                QuickStep(label = "-500г", delta = -0.5),
+                QuickStep(label = "-1 кг", delta = -1.0),
+                QuickStep(label = "+500г", delta = 0.5),
+                QuickStep(label = "+1 кг", delta = 1.0)
+            )
+        } else {
+            listOf(
+                QuickStep(label = "-1 шт", delta = -1.0),
+                QuickStep(label = "+1 шт", delta = 1.0)
+            )
+        }
+    }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 220.dp)
+            .heightIn(min = 240.dp)
             .clickable { onOpenDetails() }, // ✅ клик по карточке → детали
-        shape = RoundedCornerShape(22.dp),
+        shape = cardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = Color(0xFFF6EBD4)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp) // ✅ сделал фото покрупнее
-                    .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    .height(150.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
             ) {
                 if (product.imageUrl != null) {
                     Box {
@@ -1536,80 +1569,171 @@ fun ProductCardLarge(
 
             Text(
                 text = product.name,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
                 maxLines = 2,
-                modifier = Modifier.heightIn(min = 40.dp)            )
+            textAlign = TextAlign.Center,
+            modifier = Modifier.heightIn(min = 40.dp)
+            )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = categoryLabel(product.category),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            Text(
+                text = buildString {
+                    append(product.price.toInt())
+                    append(" ₽ / ")
+                    append(if (product.unit == UnitType.KG) "кг" else "шт")
+                },
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (isQuickAddExpanded) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = buildString {
-                            append(product.price.toInt())
-                            append(" ₽ / ")
-                            append(if (product.unit == UnitType.KG) "кг" else "шт")
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+
+                    val leftButtons = quickSteps.take(quickSteps.size / 2)
+                    val rightButtons = quickSteps.takeLast(quickSteps.size / 2)
+                    QuickStepRow(
+                        steps = leftButtons,
+                        product = product,
+                        enabled = product.inStock,
+                        currentQuantity = currentQuantity,
+                        onAddToCart = onAddToCart,
+                        onUpdateQuantity = onUpdateQuantity
+                    )
+                    CartButton(
+                        enabled = product.inStock,
+                        onClick = { isQuickAddExpanded = false }
+                    )
+                    QuickStepRow(
+                        steps = rightButtons,
+                        product = product,
+                        enabled = product.inStock,
+                        currentQuantity = currentQuantity,
+                        onAddToCart = onAddToCart,
+                        onUpdateQuantity = onUpdateQuantity
                     )
                 }
 
-                // ✅ чтобы клик по корзине НЕ открывал детали:
-                FilledTonalIconButton(
-                    onClick = { showQuantityDialog = true },
+            } else {
+                CartButton(
                     enabled = product.inStock,
-                    colors = IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = if (product.inStock) {
-                            MaterialTheme.colorScheme.secondaryContainer
+                    onClick = { isQuickAddExpanded = true }
+                )
+            }
+        }
+    }
+}
+
+private data class QuickStep(
+    val label: String,
+    val delta: Double
+)
+
+@Composable
+private fun QuickStepRow(
+    steps: List<QuickStep>,
+    product: Product,
+    enabled: Boolean,
+    currentQuantity: Double,
+    onAddToCart: (Product, Double) -> Unit,
+    onUpdateQuantity: (String, Double) -> Unit
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        steps.forEach { step ->
+            Surface(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = enabled) {
+                        if (step.delta > 0) {
+                            onAddToCart(product, step.delta)
                         } else {
-                            MaterialTheme.colorScheme.errorContainer
-                        },
-                        contentColor = if (product.inStock) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.error
+
+                            val nextQuantity = (currentQuantity + step.delta).coerceAtLeast(0.0)
+                            onUpdateQuantity(product.id, nextQuantity)
                         }
-                    ),
-                    modifier = Modifier
-                        .padding(0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ShoppingCart,
-                        contentDescription = if (product.inStock) "Добавить в корзину" else "Нет в наличии"
+                    },
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 4.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = step.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.Center,
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        }
                     )
                 }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(2.dp))
+@Composable
+private fun CartButton(
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .size(70.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = CircleShape,
+        color = Color(0xFFF7C79A),
+        shadowElevation = 6.dp
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.ShoppingCart,
+                contentDescription = "Корзина",
+                tint = Color(0xFF6E3B1F)
+            )
             Text(
-                text = product.originCountry ?: " ",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "Корзина".uppercase(),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = Color(0xFF6E3B1F)
             )
         }
     }
-
-    if (showQuantityDialog) {
-        QuantityPickerDialog(
-            unit = product.unit,
-            initialQuantity = 0.0,
-            onConfirm = { quantity ->
-                if (quantity > 0.0) onAddToCart(product, quantity)
-                showQuantityDialog = false
-            },
-            onDismiss = { showQuantityDialog = false }
-        )
-    }
 }
+
+private fun categoryLabel(category: ProductCategory): String =
+    when (category) {
+        ProductCategory.VEGETABLES -> "Овощи"
+        ProductCategory.FRUITS -> "Фрукты"
+        ProductCategory.BERRIES -> "Ягоды"
+        ProductCategory.GREENS -> "Зелень"
+        ProductCategory.NUTS -> "Орехи/сухофрукты"
+        ProductCategory.OTHER -> "Другое"
+    }
+
 
 
 
