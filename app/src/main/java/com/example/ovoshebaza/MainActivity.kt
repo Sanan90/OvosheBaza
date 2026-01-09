@@ -117,6 +117,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 
 import androidx.compose.material.icons.filled.Add
@@ -1515,8 +1516,8 @@ fun ProductCardLarge(
         val perSideCount = quickButtonCount / 2
         val availablePerSide = (maxWidth - overlaySidePadding * 2 - cartButtonSize - quickButtonSpacing * 2) / 2
         val quickButtonSize = minOf(
-            if (isCompact) 34.dp else 40.dp,
-            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount).coerceAtLeast(22.dp)
+            if (isCompact) 38.dp else 46.dp,
+            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount).coerceAtLeast(26.dp)
         )
         // Смещения по вертикали для внутренних и внешних кнопок (дуга)
         val innerOffset = quickButtonSize * 0.3f   // ближние к корзине кнопки - небольшой подъем
@@ -1700,6 +1701,19 @@ private fun QuickStepButton(
     size: Dp,
     modifier: Modifier = Modifier
 ) {
+    val gradient = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFFFFE7C4),
+            Color(0xFFF5B56A),
+            Color(0xFFE3903B)
+        )
+    )
+    val highlight = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.65f),
+            Color.Transparent
+        )
+    )
     Surface(
         modifier = modifier
             .size(size)
@@ -1713,20 +1727,32 @@ private fun QuickStepButton(
                 }
             },
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 4.dp
+        color = Color.Transparent,
+        shadowElevation = 8.dp
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = step.label,
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.Center,
-                color = if (enabled) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(gradient, CircleShape)
+                .border(1.dp, Color(0xFFFFF1DD), CircleShape)
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(highlight, CircleShape)
             )
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Text(
+                    text = step.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.Center,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    }
+                )
+            }
         }
     }
 }
@@ -1739,26 +1765,51 @@ private fun CartButton(
     size: Dp,
     modifier: Modifier = Modifier
 ) {
+    val gradient = Brush.linearGradient(
+        colors = listOf(
+            Color(0xFFFFE3B8),
+            Color(0xFFF6B25C),
+            Color(0xFFE48C35)
+        )
+    )
+    val highlight = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.7f),
+            Color.Transparent
+        )
+    )
     Surface(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         shape = CircleShape,
-        color = Color(0xFFF7C79A),
-        shadowElevation = 6.dp
+        color = Color.Transparent,
+        shadowElevation = 10.dp
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(gradient, CircleShape)
+                .border(1.dp, Color(0xFFFFF4E5), CircleShape)
         ) {
-            Icon(
-                imageVector = Icons.Default.ShoppingCart,
-                contentDescription = "Корзина",
-                tint = Color(0xFF6E3B1F),
-                modifier = Modifier.size(size * 0.55f)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(highlight, CircleShape)
             )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ShoppingCart,
+                    contentDescription = "Корзина",
+                    tint = Color(0xFF6E3B1F),
+                    modifier = Modifier.size(size * 0.55f)
+                )
+            }
         }
     }
 }
