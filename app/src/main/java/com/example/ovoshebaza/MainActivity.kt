@@ -1510,10 +1510,10 @@ fun ProductCardLarge(
         val cardMinHeight = if (isCompact) 210.dp else 240.dp
         val imageHeight = if (isCompact) 120.dp else 150.dp
         val cartButtonSize = if (isCompact) 52.dp else 64.dp
-        val quickButtonCount = if (product.unit == UnitType.KG) 5 else 3
+        val quickButtonCountForLayout = 5
         val quickButtonSpacing = 0.dp
         val overlaySidePadding = if (isCompact) 4.dp else 8.dp
-        val perSideCount = quickButtonCount / 2
+        val perSideCount = quickButtonCountForLayout / 2
         val availablePerSide = (maxWidth - overlaySidePadding * 2 - cartButtonSize - quickButtonSpacing * 2) / 2
         val desiredQuickButtonSize = cartButtonSize * 0.82f
         val quickButtonSize = minOf(
