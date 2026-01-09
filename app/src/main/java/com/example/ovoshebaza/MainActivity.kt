@@ -1493,9 +1493,9 @@ fun ProductCardLarge(
     val quickSteps = remember(product.unit) {
         if (product.unit == UnitType.KG) {
             listOf(
-                QuickStep(label = "-500г", delta = -0.5),
+                QuickStep(label = "-0.5", delta = -0.5),
                 QuickStep(label = "-1 кг", delta = -1.0),
-                QuickStep(label = "+500г", delta = 0.5),
+                QuickStep(label = "+0.5", delta = 0.5),
                 QuickStep(label = "+1 кг", delta = 1.0)
             )
         } else {
@@ -1507,8 +1507,8 @@ fun ProductCardLarge(
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 180.dp
-        val cardMinHeight = if (isCompact) 210.dp else 240.dp
-        val imageHeight = if (isCompact) 120.dp else 150.dp
+        val cardMinHeight = if (isCompact) 190.dp else 220.dp
+        val imageHeight = if (isCompact) 110.dp else 130.dp
         val cartButtonSize = if (isCompact) 52.dp else 64.dp
         val quickButtonCountForLayout = 5
         val quickButtonSpacing = 0.dp
@@ -1523,9 +1523,9 @@ fun ProductCardLarge(
         )
         // Смещения по вертикали для внутренних и внешних кнопок (дуга)
         val innerOffset = quickButtonSize * 1f   // ближние к корзине кнопки - небольшой подъем
-        val outerOffset = quickButtonSize * 1.3f   // крайние кнопки - больший подъем
+        val outerOffset = quickButtonSize * 1.1f   // крайние кнопки - больший подъем
         // Высота нижней области, увеличена с учетом дуги, чтобы кнопки не перекрывали текст
-        val controlsHeight = cartButtonSize + outerOffset + 10.dp
+        val controlsHeight = cartButtonSize + outerOffset + 6.dp
         val buttonInsetRatio = 0.8f  // Высота кнопки корзины
         val buttonYOffset = cartButtonSize * (1f - buttonInsetRatio)
 
@@ -1542,7 +1542,7 @@ fun ProductCardLarge(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 14.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                         .padding(bottom = controlsHeight),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -1583,7 +1583,7 @@ fun ProductCardLarge(
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = product.name,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
@@ -1591,13 +1591,7 @@ fun ProductCardLarge(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.height(20.dp)
                     )
-                    Text(
-                        text = categoryLabel(product.category),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = buildString {
                             append(product.price.toInt())
@@ -1757,16 +1751,34 @@ private fun QuickStepButton(
                     .background(shadowOverlay, CircleShape)
             )
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = step.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                    color = if (enabled) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    }
-                )
+                val iconRes = when {
+                    step.label.contains("шт") && step.delta == -1.0 -> R.drawable.minus_1st
+                    step.label.contains("шт") && step.delta == 1.0 -> R.drawable.plus_1st
+                    step.delta == -1.0 -> R.drawable.minus_1
+                    step.delta == -0.5 -> R.drawable.minus_05
+                    step.delta == 0.5 -> R.drawable.plus_05
+                    step.delta == 1.0 -> R.drawable.plus_1
+                    else -> null
+                }
+                if (iconRes != null) {
+                    Image(
+                        painter = painterResource(id = iconRes),
+                        contentDescription = step.label,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.FillBounds
+                    )
+                } else {
+                    Text(
+                        text = step.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        textAlign = TextAlign.Center,
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        }
+                    )
+                }
             }
         }
     }
@@ -1831,11 +1843,11 @@ private fun CartButton(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.ShoppingCart,
+                Image(
+                    painter = painterResource(id = R.drawable.order_button),
                     contentDescription = "Корзина",
-                    tint = Color(0xFF6E3B1F),
-                    modifier = Modifier.size(size * 0.55f)
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.FillBounds
                 )
             }
         }
