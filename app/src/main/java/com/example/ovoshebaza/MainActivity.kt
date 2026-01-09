@@ -1586,10 +1586,10 @@ fun ProductCardLarge(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = product.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 2,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.height(48.dp)
+                        modifier = Modifier.height(20.dp)
                     )
                     Text(
                         text = categoryLabel(product.category),
