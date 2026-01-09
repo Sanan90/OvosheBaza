@@ -90,7 +90,7 @@ import com.example.ovoshebaza.ui.theme.VeggieTheme
 
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Brush
-
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -1511,20 +1511,22 @@ fun ProductCardLarge(
         val imageHeight = if (isCompact) 120.dp else 150.dp
         val cartButtonSize = if (isCompact) 52.dp else 64.dp
         val quickButtonCount = if (product.unit == UnitType.KG) 5 else 3
-        val quickButtonSpacing = if (isCompact) 2.dp else 4.dp
+        val quickButtonSpacing = 0.dp
         val overlaySidePadding = if (isCompact) 4.dp else 8.dp
         val perSideCount = quickButtonCount / 2
         val availablePerSide = (maxWidth - overlaySidePadding * 2 - cartButtonSize - quickButtonSpacing * 2) / 2
+        val desiredQuickButtonSize = cartButtonSize * 0.82f
         val quickButtonSize = minOf(
-            if (isCompact) 38.dp else 46.dp,
-            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount).coerceAtLeast(26.dp)
+            desiredQuickButtonSize,
+            ((availablePerSide - quickButtonSpacing * (perSideCount - 1)) / perSideCount)
+                .coerceAtLeast(cartButtonSize * 0.7f)
         )
         // Смещения по вертикали для внутренних и внешних кнопок (дуга)
-        val innerOffset = quickButtonSize * 0.3f   // ближние к корзине кнопки - небольшой подъем
-        val outerOffset = quickButtonSize * 0.6f   // крайние кнопки - больший подъем
+        val innerOffset = quickButtonSize * 1f   // ближние к корзине кнопки - небольшой подъем
+        val outerOffset = quickButtonSize * 1.3f   // крайние кнопки - больший подъем
         // Высота нижней области, увеличена с учетом дуги, чтобы кнопки не перекрывали текст
         val controlsHeight = cartButtonSize + outerOffset + 10.dp
-        val buttonInsetRatio = 0.8f
+        val buttonInsetRatio = 0.8f  // Высота кнопки корзины
         val buttonYOffset = cartButtonSize * (1f - buttonInsetRatio)
 
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -1627,7 +1629,7 @@ fun ProductCardLarge(
                 if (isQuickAddExpanded) {
                     val leftButtons = quickSteps.take(quickSteps.size / 2)
                     val rightButtons = quickSteps.takeLast(quickSteps.size / 2)
-                    val sidePadding = cartButtonSize / 2 + quickButtonSpacing
+                    val sidePadding = cartButtonSize / 2 + 6.dp
 
                     // Левая группа кнопок (убавление веса)
                     Row(
@@ -1708,10 +1710,18 @@ private fun QuickStepButton(
             Color(0xFFE3903B)
         )
     )
-    val highlight = Brush.linearGradient(
+    val highlight = Brush.radialGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.65f),
+            Color.White.copy(alpha = 0.8f),
             Color.Transparent
+        ),
+        center = Offset(40f, 40f),
+        radius = 180f
+    )
+    val shadowOverlay = Brush.linearGradient(
+        colors = listOf(
+            Color.Transparent,
+            Color.Black.copy(alpha = 0.18f)
         )
     )
     Surface(
@@ -1728,18 +1738,23 @@ private fun QuickStepButton(
             },
         shape = CircleShape,
         color = Color.Transparent,
-        shadowElevation = 8.dp
+        shadowElevation = 12.dp
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(gradient, CircleShape)
-                .border(1.dp, Color(0xFFFFF1DD), CircleShape)
+                .border(1.dp, Color(0xFFFFF5E7), CircleShape)
         ) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(highlight, CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(shadowOverlay, CircleShape)
             )
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Text(
@@ -1772,10 +1787,18 @@ private fun CartButton(
             Color(0xFFE48C35)
         )
     )
-    val highlight = Brush.linearGradient(
+    val highlight = Brush.radialGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.7f),
+            Color.White.copy(alpha = 0.85f),
             Color.Transparent
+        ),
+        center = Offset(50f, 50f),
+        radius = 220f
+    )
+    val shadowOverlay = Brush.linearGradient(
+        colors = listOf(
+            Color.Transparent,
+            Color.Black.copy(alpha = 0.2f)
         )
     )
     Surface(
@@ -1785,18 +1808,23 @@ private fun CartButton(
             .clickable(enabled = enabled, onClick = onClick),
         shape = CircleShape,
         color = Color.Transparent,
-        shadowElevation = 10.dp
+        shadowElevation = 16.dp
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(gradient, CircleShape)
-                .border(1.dp, Color(0xFFFFF4E5), CircleShape)
+                .border(1.dp, Color(0xFFFFF7EB), CircleShape)
         ) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(highlight, CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(shadowOverlay, CircleShape)
             )
             Column(
                 modifier = Modifier.fillMaxSize(),
