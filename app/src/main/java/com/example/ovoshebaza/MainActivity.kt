@@ -132,6 +132,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import java.util.Locale
+import androidx.compose.ui.unit.sp
 
 // Главная Activity — точка входа в приложение
 class MainActivity : ComponentActivity() {
@@ -852,10 +853,10 @@ fun CatalogScreen(
             columns = GridCells.Fixed(2),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 4.dp),
             contentPadding = PaddingValues(bottom = 24.dp, top = 6.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
 
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -1493,7 +1494,7 @@ fun ProductCardLarge(
 ) {
     var showQuantityDialog by remember { mutableStateOf(false) }
     var isQuickAddExpanded by remember { mutableStateOf(false) }
-    val cardShape = RoundedCornerShape(28.dp)
+    val cardShape = RoundedCornerShape(22.dp)
     val quickSteps = remember(product.unit) {
         if (product.unit == UnitType.KG) {
             listOf(
@@ -1511,8 +1512,8 @@ fun ProductCardLarge(
     }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val isCompact = maxWidth < 180.dp
-        val cardMinHeight = if (isCompact) 190.dp else 220.dp
-        val imageHeight = if (isCompact) 110.dp else 130.dp
+        val cardMinHeight = if (isCompact) 170.dp else 200.dp
+        val imageHeight = if (isCompact) 140.dp else 140.dp
         val cartButtonSize = if (isCompact) 52.dp else 64.dp
         val quickButtonCountForLayout = 5
         val quickButtonSpacing = 0.dp
@@ -1529,7 +1530,7 @@ fun ProductCardLarge(
         val innerOffset = quickButtonSize * 1f   // ближние к корзине кнопки - небольшой подъем
         val outerOffset = quickButtonSize * 1.1f   // крайние кнопки - больший подъем
         // Высота нижней области, увеличена с учетом дуги, чтобы кнопки не перекрывали текст
-        val controlsHeight = cartButtonSize + outerOffset + 6.dp
+        val controlsHeight = cartButtonSize + outerOffset - 20.dp
         val buttonInsetRatio = 0.8f  // Высота кнопки корзины
         val buttonYOffset = cartButtonSize * (1f - buttonInsetRatio)
 
@@ -1538,15 +1539,16 @@ fun ProductCardLarge(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = cardMinHeight)
+                    .border(1.dp, Color(0xFFE7DED2), cardShape)
                     .clickable { onOpenDetails() },
                 shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF6EBD4)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF9F6F1)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
                         .padding(bottom = controlsHeight),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -1554,7 +1556,7 @@ fun ProductCardLarge(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(imageHeight)
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(16.dp))
                             .background(Color.White)
                     ) {
                         if (product.imageUrl != null) {
@@ -1590,19 +1592,25 @@ fun ProductCardLarge(
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = product.name,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 3,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.2.sp
+                        ),
+                        maxLines = 2,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.height(54.dp)
+                        modifier = Modifier.height(44.dp)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = buildString {
                             append(product.price.toInt())
                             append(" ₽ / ")
                             append(if (product.unit == UnitType.KG) "кг" else "шт")
                         },
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.4.sp
+                        ),
                         textAlign = TextAlign.Center
                     )
                 }
