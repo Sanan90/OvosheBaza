@@ -131,6 +131,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import java.util.Locale
 
 // Главная Activity — точка входа в приложение
 class MainActivity : ComponentActivity() {
@@ -677,7 +678,8 @@ fun AppNavHost(
             CartScreen(
                 cartItems = cartItems,
                 onUpdateQuantity = onUpdateQuantity,
-                onRemoveFromCart = onRemoveFromCart
+                onRemoveFromCart = onRemoveFromCart,
+                onClearCart = onClearCart
             )
         }
 
@@ -741,7 +743,9 @@ fun AppNavHost(
                 ProductDetailsScreen(
                     product = product,
                     onBack = { navController.popBackStack() },
-                    onAddToCart = onAddToCart
+                    cartItems = cartItems,
+                    onAddToCart = onAddToCart,
+                    onUpdateQuantity = onUpdateQuantity
                 )
             } else {
                 LaunchedEffect(Unit) { navController.popBackStack() }
@@ -1587,11 +1591,11 @@ fun ProductCardLarge(
                     Text(
                         text = product.name,
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                        maxLines = 2,
+                        maxLines = 3,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.height(20.dp)
+                        modifier = Modifier.heightIn(min = 32.dp)
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = buildString {
                             append(product.price.toInt())
@@ -1617,6 +1621,8 @@ fun ProductCardLarge(
                     enabled = product.inStock,
                     onClick = { isQuickAddExpanded = !isQuickAddExpanded },
                     size = cartButtonSize,
+                    currentQuantity = currentQuantity,
+                    unit = product.unit,
                     modifier = Modifier.align(Alignment.Center)
                 )
 
@@ -1790,6 +1796,8 @@ private fun CartButton(
     enabled: Boolean,
     onClick: () -> Unit,
     size: Dp,
+    currentQuantity: Double,
+    unit: UnitType,
     modifier: Modifier = Modifier
 ) {
     val gradient = Brush.linearGradient(
@@ -1850,6 +1858,29 @@ private fun CartButton(
                     contentScale = ContentScale.FillBounds
                 )
             }
+            if (currentQuantity > 0) {
+                val quantityText = if (unit == UnitType.KG) {
+                    if (currentQuantity % 1.0 == 0.0) {
+                        currentQuantity.toInt().toString()
+                    } else {
+                        String.format(Locale.US, "%.1f", currentQuantity)
+                    }
+                } else {
+                    currentQuantity.toInt().toString()
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF6E3B1F), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = quantityText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White
+                    )
+                }
+            }
         }
     }
 }
@@ -1883,7 +1914,8 @@ private fun categoryLabel(category: ProductCategory): String =
 fun CartScreen(
     cartItems: List<CartItem>,
     onUpdateQuantity: (String, Double) -> Unit,
-    onRemoveFromCart: (String) -> Unit
+    onRemoveFromCart: (String) -> Unit,
+    onClearCart: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -2178,6 +2210,7 @@ fun CartScreen(
                                                         address = customerAddress
                                                     )
 
+                                                    onClearCart()
                                                     isSendingOrder = false
                                                     Toast.makeText(
                                                         context,
@@ -2262,8 +2295,7 @@ fun CartItemRow(
     onUpdateQuantity: (String, Double) -> Unit,
     onRemoveFromCart: (String) -> Unit
 ) {
-    // Показывать ли диалог редактирования количества
-    var showDialog by remember { mutableStateOf(false) }
+
 
     val unitLabel = when (item.product.unit) {
         UnitType.KG -> "кг"
@@ -2391,9 +2423,6 @@ fun CartItemRow(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    TextButton(onClick = { showDialog = true }) {
-                        Text("Изменить")
-                    }
                 }
             }
 
@@ -2401,25 +2430,6 @@ fun CartItemRow(
     }
 
 
-
-    // ----- ДИАЛОГ РЕДАКТИРОВАНИЯ КОЛИЧЕСТВА -----
-    if (showDialog) {
-        QuantityPickerDialog(
-            unit = item.product.unit,
-            initialQuantity = item.quantity,
-            onConfirm = { newQuantity ->
-                if (newQuantity <= 0.0) {
-                    onRemoveFromCart(item.product.id)
-                } else {
-                    onUpdateQuantity(item.product.id, newQuantity)
-                }
-                showDialog = false
-            },
-            onDismiss = {
-                showDialog = false
-            }
-        )
-    }
 }
 
 @Composable
@@ -2548,10 +2558,28 @@ fun CartSummaryCard(
 fun ProductDetailsScreen(
     product: Product,
     onBack: () -> Unit,
-    onAddToCart: (Product, Double) -> Unit
+    cartItems: List<CartItem>,
+    onAddToCart: (Product, Double) -> Unit,
+    onUpdateQuantity: (String, Double) -> Unit
 ) {
-    var showQtyDialog by remember { mutableStateOf(false) }
+    var isQuickAddExpanded by remember { mutableStateOf(false) }
     val unitText = if (product.unit == UnitType.KG) "кг" else "шт"
+    val currentQuantity = cartItems.firstOrNull { it.product.id == product.id }?.quantity ?: 0.0
+    val quickSteps = remember(product.unit) {
+        if (product.unit == UnitType.KG) {
+            listOf(
+                QuickStep(label = "-500г", delta = -0.5),
+                QuickStep(label = "-1 кг", delta = -1.0),
+                QuickStep(label = "+500г", delta = 0.5),
+                QuickStep(label = "+1 кг", delta = 1.0)
+            )
+        } else {
+            listOf(
+                QuickStep(label = "-1 шт", delta = -1.0),
+                QuickStep(label = "+1 шт", delta = 1.0)
+            )
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -2595,11 +2623,45 @@ fun ProductDetailsScreen(
                     }
 
                     val canAddToCart = product.inStock
-                    Button(
-                        onClick = { showQtyDialog = true },
-                        enabled = canAddToCart
+                    val leftButtons = quickSteps.filter { it.delta < 0 }
+                    val rightButtons = quickSteps.filter { it.delta > 0 }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(if (canAddToCart) "В корзину" else "Товара нет в наличии")
+                        if (isQuickAddExpanded) {
+                            leftButtons.forEach { step ->
+                                QuickStepButton(
+                                    step = step,
+                                    product = product,
+                                    enabled = canAddToCart,
+                                    currentQuantity = currentQuantity,
+                                    onAddToCart = onAddToCart,
+                                    onUpdateQuantity = onUpdateQuantity,
+                                    size = 44.dp
+                                )
+                            }
+                        }
+                        CartButton(
+                            enabled = canAddToCart,
+                            onClick = { isQuickAddExpanded = !isQuickAddExpanded },
+                            size = 56.dp,
+                            currentQuantity = currentQuantity,
+                            unit = product.unit
+                        )
+                        if (isQuickAddExpanded) {
+                            rightButtons.forEach { step ->
+                                QuickStepButton(
+                                    step = step,
+                                    product = product,
+                                    enabled = canAddToCart,
+                                    currentQuantity = currentQuantity,
+                                    onAddToCart = onAddToCart,
+                                    onUpdateQuantity = onUpdateQuantity,
+                                    size = 44.dp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2712,18 +2774,7 @@ fun ProductDetailsScreen(
         }
     }
 
-    if (showQtyDialog) {
-        // ⚠️ Используем твой существующий диалог выбора количества
-        QuantityPickerDialog(
-            unit = product.unit,
-            initialQuantity = 0.0,
-            onConfirm = { qty ->
-                if (qty > 0.0) onAddToCart(product, qty)
-                showQtyDialog = false
-            },
-            onDismiss = { showQtyDialog = false }
-        )
-    }
+
 }
 
 
