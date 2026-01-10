@@ -249,20 +249,20 @@ fun VeggieShopApp() {
                     )
                 )
             } else {
-                val topBarBrush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF55C76B),
-                        Color(0xFF7DDC7B),
-                        Color(0xFFF6B24C),
-                        Color(0xFFF0932B)
-                    )
-                )
+
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(topBarBrush)
+
                 ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.header_fruit),
+                        contentDescription = null,
+                        modifier = Modifier.matchParentSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
 
                     CenterAlignedTopAppBar(
                         title = {
@@ -1593,7 +1593,7 @@ fun ProductCardLarge(
                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         maxLines = 3,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.heightIn(min = 32.dp)
+                        modifier = Modifier.height(54.dp)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
