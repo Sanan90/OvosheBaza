@@ -1666,7 +1666,7 @@ fun ProductCardLarge(
 
             if (product.isNew) {
                 Image(
-                    painter = painterResource(id = R.drawable.new_position),
+                    painter = painterResource(id = R.drawable.new_position3),
                     contentDescription = "Новинка",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
