@@ -27,6 +27,7 @@ data class Product(
     val imageUrl: String?,             // URL картинки (может быть null)
     val description: String?,          // Описание товара (может быть null)
     val isPopular: Boolean,            // Флаг "популярный товар"
+    val isNew: Boolean,                // Флаг "новинка"
     val inStock: Boolean               // В наличии или нет
     // Позже добавим сюда ссылки на фотографии
 )
@@ -55,6 +56,7 @@ val sampleProducts = listOf(
         originCountry = "Азербайджан",
         description = "Плотные и сладкие томаты для салатов, соусов и закаток.",
         isPopular = true,
+        isNew = true,
         inStock = true
     ),
     Product(
@@ -67,6 +69,7 @@ val sampleProducts = listOf(
         originCountry = "Россия",
         description = "Хрустящие огурцы с тонкой кожицей — отлично для салатов.",
         isPopular = true,
+        isNew = false,
         inStock = true
     ),
     Product(
@@ -79,6 +82,7 @@ val sampleProducts = listOf(
         originCountry = null,
         description = "Молодой картофель с нежной мякотью, идеален для запекания.",
         isPopular = false,
+        isNew = false,
         inStock = true
     ),
     Product(
@@ -91,6 +95,7 @@ val sampleProducts = listOf(
         originCountry = "Турция",
         description = "Сочные красные яблоки с ярким ароматом.",
         isPopular = true,
+        isNew = false,
         inStock = true
     ),
     Product(
@@ -103,6 +108,7 @@ val sampleProducts = listOf(
         originCountry = "Эквадор",
         description = "Спелые сладкие бананы для перекуса и десертов.",
         isPopular = false,
+        isNew = true,
         inStock = true
     ),
     Product(
@@ -115,6 +121,7 @@ val sampleProducts = listOf(
         originCountry = null,
         description = "Ароматный укроп для свежести и вкуса блюд.",
         isPopular = true,
+        isNew = false,
         inStock = true
     )
 )

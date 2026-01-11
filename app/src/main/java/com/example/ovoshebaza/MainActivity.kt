@@ -774,6 +774,9 @@ sealed class CatalogFilter {
     // Показываем все товары
     object All : CatalogFilter()
 
+    // Показываем только новинки
+    object New : CatalogFilter()
+
 
     // Показываем товары, которых нет в наличии
     object OutOfStock : CatalogFilter()
@@ -798,6 +801,7 @@ fun CatalogScreen(
 ) {
     var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.All) }
     var searchQuery by remember { mutableStateOf("") }
+    var expandedProductId by remember { mutableStateOf<String?>(null) }
 
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -823,6 +827,7 @@ fun CatalogScreen(
     val filteredProducts = remember(selectedFilter, searchQuery, inStockProducts, outOfStockProducts) {
         val base = when (selectedFilter) {
             is CatalogFilter.Popular -> inStockProducts.filter { it.isPopular }
+            is CatalogFilter.New -> inStockProducts.filter { it.isNew }
             is CatalogFilter.Category -> {
                 val cat = (selectedFilter as CatalogFilter.Category).category
                 inStockProducts.filter { it.category == cat }
@@ -934,6 +939,10 @@ fun CatalogScreen(
                         selectedFilter = CatalogFilter.All
                         scope.launch { gridState.animateScrollToItem(3) }
                     },
+                    onSelectNew = {
+                        selectedFilter = CatalogFilter.New
+                        scope.launch { gridState.animateScrollToItem(3) }
+                    },
                     onSelectCategory = { cat ->
                         selectedFilter = CatalogFilter.Category(cat)
                         scope.launch { gridState.animateScrollToItem(3) }
@@ -953,7 +962,14 @@ fun CatalogScreen(
                     currentQuantity = currentQuantity,
                     onAddToCart = onAddToCart,
                     onUpdateQuantity = onUpdateQuantity,
-                    onOpenDetails = { onOpenDetails(product) }
+                    onOpenDetails = {
+                        expandedProductId = null
+                        onOpenDetails(product)
+                    },
+                    isQuickAddExpanded = expandedProductId == product.id,
+                    onToggleQuickAdd = {
+                        expandedProductId = if (expandedProductId == product.id) null else product.id
+                    }
                 )
             }
 
@@ -1233,6 +1249,7 @@ fun CategoryChipsRow(
     categories: List<ProductCategory>,
     selectedFilter: CatalogFilter,
     onSelectAll: () -> Unit,
+    onSelectNew: () -> Unit,
     onSelectCategory: (ProductCategory) -> Unit,
     onSelectOutOfStock: () -> Unit
 ) {
@@ -1250,6 +1267,19 @@ fun CategoryChipsRow(
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+
+        // Новинки
+        item {
+            FilterChip(
+                selected = selectedFilter is CatalogFilter.New,
+                onClick = onSelectNew,
+                label = { Text("Новинки") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
@@ -1308,6 +1338,7 @@ fun CategoryFilterRow(
     val filters = listOf<CatalogFilter>(
         CatalogFilter.All,
         CatalogFilter.Popular,
+        CatalogFilter.New,
         CatalogFilter.Category(ProductCategory.VEGETABLES),
         CatalogFilter.Category(ProductCategory.FRUITS),
         CatalogFilter.Category(ProductCategory.BERRIES),
@@ -1325,6 +1356,7 @@ fun CategoryFilterRow(
 
             val label = when (filter) {
                 is CatalogFilter.Popular -> "Популярные"
+                is CatalogFilter.New -> "Новинки"
                 is CatalogFilter.All -> "Все"
                 is CatalogFilter.Category -> when (filter.category) {
                     ProductCategory.VEGETABLES -> "Овощи"
@@ -1339,6 +1371,7 @@ fun CategoryFilterRow(
 
             val isSelected = when {
                 selectedFilter is CatalogFilter.Popular && filter is CatalogFilter.Popular -> true
+                selectedFilter is CatalogFilter.New && filter is CatalogFilter.New -> true
                 selectedFilter is CatalogFilter.All && filter is CatalogFilter.All -> true
                 selectedFilter is CatalogFilter.OutOfStock && filter is CatalogFilter.OutOfStock -> true
                 selectedFilter is CatalogFilter.Category && filter is CatalogFilter.Category &&
@@ -1490,10 +1523,12 @@ fun ProductCardLarge(
     currentQuantity: Double,
     onAddToCart: (Product, Double) -> Unit,
     onUpdateQuantity: (String, Double) -> Unit,
-    onOpenDetails: () -> Unit
+    onOpenDetails: () -> Unit,
+    isQuickAddExpanded: Boolean,
+    onToggleQuickAdd: () -> Unit
 ) {
     var showQuantityDialog by remember { mutableStateOf(false) }
-    var isQuickAddExpanded by remember { mutableStateOf(false) }
+
     val cardShape = RoundedCornerShape(22.dp)
     val cardBackground = Color(0xFFEFF6EF)
     val cardBorder = Color(0xFFD7E6D1)
@@ -1592,6 +1627,7 @@ fun ProductCardLarge(
                                 Text("Фото", style = MaterialTheme.typography.bodySmall)
                             }
                         }
+
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
@@ -1628,6 +1664,19 @@ fun ProductCardLarge(
                 }
             }
 
+            if (product.isNew) {
+                Image(
+                    painter = painterResource(id = R.drawable.new_position),
+                    contentDescription = "Новинка",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .offset(x = 12.dp, y = (-12).dp)
+                        .size(52.dp)
+                )
+            }
+
             // Блок кнопок корзины и изменения веса
             Box(
                 modifier = Modifier
@@ -1639,7 +1688,7 @@ fun ProductCardLarge(
                 // Центральная кнопка корзины (без изменений)
                 CartButton(
                     enabled = product.inStock,
-                    onClick = { isQuickAddExpanded = !isQuickAddExpanded },
+                    onClick = onToggleQuickAdd,
                     size = cartButtonSize,
                     currentQuantity = currentQuantity,
                     unit = product.unit,
@@ -1888,6 +1937,8 @@ private fun CartButton(
                 } else {
                     currentQuantity.toInt().toString()
                 }
+                val unitLabel = if (unit == UnitType.KG) "кг" else "шт"
+                val quantityLabel = "$quantityText$unitLabel"
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1895,7 +1946,7 @@ private fun CartButton(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = quantityText,
+                        text = quantityLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White
                     )
@@ -2658,14 +2709,14 @@ fun ProductDetailsScreen(
                                     currentQuantity = currentQuantity,
                                     onAddToCart = onAddToCart,
                                     onUpdateQuantity = onUpdateQuantity,
-                                    size = 44.dp
+                                    size = 36.dp
                                 )
                             }
                         }
                         CartButton(
                             enabled = canAddToCart,
                             onClick = { isQuickAddExpanded = !isQuickAddExpanded },
-                            size = 56.dp,
+                            size = 48.dp,
                             currentQuantity = currentQuantity,
                             unit = product.unit
                         )
@@ -2678,7 +2729,7 @@ fun ProductDetailsScreen(
                                     currentQuantity = currentQuantity,
                                     onAddToCart = onAddToCart,
                                     onUpdateQuantity = onUpdateQuantity,
-                                    size = 44.dp
+                                    size = 36.dp
                                 )
                             }
                         }
@@ -2984,6 +3035,7 @@ fun ProductEditDialog(
     var imageUrl by remember { mutableStateOf(initialProduct.imageUrl ?: "") }
     var description by remember { mutableStateOf(initialProduct.description ?: "") }
     var isPopular by remember { mutableStateOf(initialProduct.isPopular) }
+    var isNewFlag by remember { mutableStateOf(initialProduct.isNew) }
     var inStock by remember { mutableStateOf(initialProduct.inStock) }
     var category by remember { mutableStateOf(initialProduct.category) }
     var unit by remember { mutableStateOf(initialProduct.unit) }
@@ -3113,6 +3165,16 @@ fun ProductEditDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Checkbox(
+                        checked = isNewFlag,
+                        onCheckedChange = { isNewFlag = it }
+                    )
+                    Text("Новинка")
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
                         checked = inStock,
                         onCheckedChange = { inStock = it }
                     )
@@ -3146,6 +3208,7 @@ fun ProductEditDialog(
                                 imageUrl = imageUrl.ifBlank { null },
                                 description = description.ifBlank { null },
                                 isPopular = isPopular,
+                                isNew = isNewFlag,
                                 inStock = inStock,
                                 category = category,
                                 unit = unit
@@ -3479,6 +3542,7 @@ fun AdminScreen(
                 originCountry = null,
                 description = null,
                 isPopular = false,
+                isNew = false,
                 inStock = true
             ),
             isNew = true,
@@ -3774,6 +3838,7 @@ fun Product.toMap(): Map<String, Any?> = mapOf(
     "originCountry" to originCountry,
     "description" to description,
     "isPopular" to isPopular,
+    "isNew" to isNew,
     "inStock" to inStock
 )
 
@@ -3789,6 +3854,7 @@ fun DocumentSnapshot.toProduct(): Product? {
     val originCountry = getString("originCountry")
     val description = getString("description")
     val isPopular = getBoolean("isPopular") ?: false
+    val isNew = getBoolean("isNew") ?: false
     val inStock = getBoolean("inStock") ?: true
 
     val category = try {
@@ -3813,6 +3879,7 @@ fun DocumentSnapshot.toProduct(): Product? {
         originCountry = originCountry,
         description = description,
         isPopular = isPopular,
+        isNew = isNew,
         inStock = inStock
     )
 }
