@@ -1495,6 +1495,10 @@ fun ProductCardLarge(
     var showQuantityDialog by remember { mutableStateOf(false) }
     var isQuickAddExpanded by remember { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(22.dp)
+    val cardBackground = Color(0xFFEFF6EF)
+    val cardBorder = Color(0xFFD7E6D1)
+    val priceBadgeBackground = Color(0xFFDDEBD2)
+    val priceBadgeBorder = Color(0xFFBFD4B2)
     val quickSteps = remember(product.unit) {
         if (product.unit == UnitType.KG) {
             listOf(
@@ -1539,10 +1543,10 @@ fun ProductCardLarge(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = cardMinHeight)
-                    .border(1.dp, Color(0xFFE7DED2), cardShape)
+                    .border(1.dp, cardBorder, cardShape)
                     .clickable { onOpenDetails() },
                 shape = cardShape,
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF9F6F1)),
+                colors = CardDefaults.cardColors(containerColor = cardBackground),
                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
             ) {
                 Column(
@@ -1550,7 +1554,7 @@ fun ProductCardLarge(
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                         .padding(bottom = controlsHeight),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.Start
                 ) {
                     Box(
                         modifier = Modifier
@@ -1597,22 +1601,30 @@ fun ProductCardLarge(
                             letterSpacing = 0.2.sp
                         ),
                         maxLines = 2,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.height(44.dp)
+                        textAlign = TextAlign.Start,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = buildString {
-                            append(product.price.toInt())
-                            append(" ₽ / ")
-                            append(if (product.unit == UnitType.KG) "кг" else "шт")
-                        },
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.4.sp
-                        ),
-                        textAlign = TextAlign.Center
-                    )
+                    Box(
+                        modifier = Modifier
+                            .border(1.dp, priceBadgeBorder, RoundedCornerShape(12.dp))
+                            .background(priceBadgeBackground, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = buildString {
+                                append(product.price.toInt())
+                                append(" ₽ / ")
+                                append(if (product.unit == UnitType.KG) "кг" else "шт")
+                            },
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.4.sp
+                            )
+                        )
+                    }
                 }
             }
 
