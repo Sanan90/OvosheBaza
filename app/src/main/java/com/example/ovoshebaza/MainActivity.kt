@@ -1673,7 +1673,7 @@ fun ProductCardLarge(
                         .align(Alignment.TopEnd)
                         .padding(4.dp)
                         .offset(x = 12.dp, y = (-12).dp)
-                        .size(52.dp)
+                        .size(44.dp)
                 )
             }
 
