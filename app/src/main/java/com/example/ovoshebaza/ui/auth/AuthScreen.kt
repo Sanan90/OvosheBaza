@@ -20,12 +20,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.google.firebase.FirebaseException
@@ -35,6 +39,7 @@ import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.auth.PhoneAuthProvider.OnVerificationStateChangedCallbacks
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +49,11 @@ fun AuthScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val auth = remember { FirebaseAuth.getInstance() }
+    val phonePrefix = "+7"
 
-    var phone by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf(phonePrefix) }
     var code by remember { mutableStateOf("") }
+    var resendSeconds by remember { mutableStateOf(0) }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
@@ -75,6 +82,8 @@ fun AuthScreen(
             override fun onVerificationFailed(e: FirebaseException) {
                 isLoading = false
                 errorText = e.localizedMessage ?: "Ошибка отправки кода"
+                verificationId = null
+                resendSeconds = 0
             }
 
             override fun onCodeSent(
@@ -84,6 +93,7 @@ fun AuthScreen(
                 isLoading = false
                 verificationId = verifId
                 resendToken = token
+                resendSeconds = 60
                 Toast.makeText(context, "Код отправлен", Toast.LENGTH_SHORT).show()
             }
         }
@@ -93,8 +103,10 @@ fun AuthScreen(
         errorText = null
         val phoneTrim = phone.trim()
 
-        if (phoneTrim.isBlank() || !phoneTrim.startsWith("+")) {
-            errorText = "Введите номер в формате +7..., +33..., и т.д."
+        if (phoneTrim.length <= phonePrefix.length || !phoneTrim.startsWith(phonePrefix)) {
+            errorText = "Введите номер в формате +7..., начиная с 9"
+            verificationId = null
+            resendSeconds = 0
             return
         }
 
@@ -112,6 +124,7 @@ fun AuthScreen(
 
         PhoneAuthProvider.verifyPhoneNumber(optionsBuilder.build())
     }
+
     //    временный код. Удалить----------
     fun quickTestSignIn() {
         phone = "+79999999999"
@@ -147,6 +160,14 @@ fun AuthScreen(
             }
     }
 
+    LaunchedEffect(verificationId, resendSeconds) {
+        if (verificationId != null && resendSeconds > 0) {
+            delay(1000)
+            resendSeconds -= 1
+        }
+    }
+
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -163,75 +184,95 @@ fun AuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("Телефон (с +)") },
-                placeholder = { Text("+7..., +33...") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Button(
-                onClick = { sendCode(false) },
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Отправить код")
-            }
-
-
-//    временный код. Удалить--------------------------------------
-
-            OutlinedButton(
-                onClick = { quickTestSignIn() },
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Тестовый вход (+79999999999)")
-            }
-            //   до сюда-------------------------------------------
-
-
-
-
-            if (verificationId != null) {
+            if (verificationId == null && resendSeconds == 0) {
                 OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it },
-                    label = { Text("Код из SMS") },
+                    value = phone,
+                    onValueChange = { input ->
+                        val sanitized = input.replace(" ", "")
+                        phone = if (sanitized.startsWith(phonePrefix)) {
+                            sanitized
+                        } else {
+                            val trimmed = sanitized.removePrefix("+").removePrefix("7")
+                            phonePrefix + trimmed
+                        }
+                    },
+                    label = { Text("Телефон") },
+                    placeholder = { Text("9XXXXXXXXX") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 Button(
-                    onClick = { confirmCode() },
+                    onClick = { sendCode(false) },
                     enabled = !isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Войти")
+                    Text("Отправить код")
+
                 }
 
-                TextButton(
-                    onClick = { sendCode(true) },
-                    enabled = !isLoading
+                //    временный код. Удалить--------------------------------------
+
+                OutlinedButton(
+                    onClick = { quickTestSignIn() },
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Отправить код ещё раз")
+                    Text("Тестовый вход (+79999999999)")
                 }
+                //   до сюда-------------------------------------------
             }
 
-            if (isLoading) {
-                CircularProgressIndicator()
-            }
 
-            if (errorText != null) {
-                Text(
-                    text = errorText!!,
-                    color = MaterialTheme.colorScheme.error
-                )
+                if (verificationId != null || resendSeconds > 0) {
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text("Код из SMS") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = { confirmCode() },
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Войти")
+                    }
+
+                    if (resendSeconds > 0) {
+                        Text("Повторная отправка через $resendSeconds сек.")
+                    } else {
+                        TextButton(
+                            onClick = { sendCode(true) },
+                            enabled = !isLoading
+                        ) {
+                            Text(
+                                text = buildAnnotatedString {
+                                    append("Не пришел код, ")
+                                    pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                    append("Отправить")
+                                    pop()
+                                    append(" еще раз")
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (isLoading) {
+                    CircularProgressIndicator()
+                }
+
+                if (errorText != null) {
+                    Text(
+                        text = errorText!!,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }
-}
