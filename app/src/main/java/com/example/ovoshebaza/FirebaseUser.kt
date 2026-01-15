@@ -4,6 +4,13 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
+fun passwordEmailForPhone(phone: String): String {
+    val digits = phone.filter { it.isDigit() }
+    val safe = if (digits.isNotBlank()) digits else "unknown"
+    return "phone$safe@ovoshebaza.local"
+}
+
+
 fun ensureUserDocExists(
     onDone: () -> Unit = {},
     onError: (String) -> Unit = {}
@@ -29,6 +36,7 @@ fun ensureUserDocExists(
                 "name" to "",
                 "address" to "",
                 "phone" to phone,
+                "passwordEnabled" to false,
                 "createdAt" to now,
                 "updatedAt" to now
             )

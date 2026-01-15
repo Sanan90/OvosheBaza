@@ -12,7 +12,8 @@ data class UserProfile(
     val name: String = "",
     val phone: String = "",
     val addresses: List<String> = emptyList(),
-    val lastAddress: String = ""
+    val lastAddress: String = "",
+    val hasPassword: Boolean = false
 )
 
 data class OrderItem(
@@ -179,13 +180,92 @@ private fun mapUserProfile(doc: DocumentSnapshot): UserProfile? {
         storedAddress.ifBlank { mergedAddresses.lastOrNull().orEmpty() }
     }
 
+    val hasPassword = doc.getBoolean("passwordEnabled") == true
+
     return UserProfile(
         name = (doc.getString("name") ?: "").trim(),
         phone = (doc.getString("phone") ?: "").trim(),
         addresses = mergedAddresses,
-        lastAddress = lastAddress
+        lastAddress = lastAddress,
+        hasPassword = hasPassword
     )
 }
+
+fun loadPasswordStatusForPhone(
+    phone: String,
+    onResult: (Boolean) -> Unit,
+    onError: (String) -> Unit = {}
+) {
+    val trimmed = phone.trim()
+    if (trimmed.isBlank()) {
+        onResult(false)
+        return
+    }
+
+    FirebaseFirestore.getInstance()
+        .collection("users")
+        .whereEqualTo("phone", trimmed)
+        .limit(1)
+        .get()
+        .addOnSuccessListener { snapshot ->
+            val hasPassword = snapshot.documents.firstOrNull()
+                ?.getBoolean("passwordEnabled") == true
+            onResult(hasPassword)
+        }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось проверить пароль")
+        }
+}
+
+fun loadPasswordStatusForUser(
+    uid: String,
+    onResult: (Boolean) -> Unit,
+    onError: (String) -> Unit = {}
+) {
+    if (uid.isBlank()) {
+        onResult(false)
+        return
+    }
+
+    FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(uid)
+        .get()
+        .addOnSuccessListener { doc ->
+            val hasPassword = doc.getBoolean("passwordEnabled") == true
+            onResult(hasPassword)
+        }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось загрузить статус пароля")
+        }
+}
+
+fun updatePasswordStatus(
+    enabled: Boolean,
+    onDone: () -> Unit = {},
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    val data = mapOf(
+        "passwordEnabled" to enabled,
+        "passwordUpdatedAt" to System.currentTimeMillis()
+    )
+
+    FirebaseFirestore.getInstance()
+        .collection("users")
+        .document(user.uid)
+        .set(data, SetOptions.merge())
+        .addOnSuccessListener { onDone() }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось сохранить пароль")
+        }
+}
+
 
 private fun mapOrderSummary(doc: DocumentSnapshot): OrderSummary {
     val createdAt = doc.getLong("createdAt") ?: 0L

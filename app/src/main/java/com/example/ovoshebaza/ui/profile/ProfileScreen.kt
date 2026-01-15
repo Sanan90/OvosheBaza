@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,6 +64,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.ovoshebaza.CartItem
 import com.example.ovoshebaza.OrderSummary
@@ -72,8 +76,11 @@ import com.example.ovoshebaza.addUserAddress
 import com.example.ovoshebaza.deleteUserAddress
 import com.example.ovoshebaza.getCachedUserProfile
 import com.example.ovoshebaza.listenUserProfile
+import com.example.ovoshebaza.passwordEmailForPhone
 import com.example.ovoshebaza.setCachedUserProfile
+import com.example.ovoshebaza.updatePasswordStatus
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.EmailAuthProvider
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
@@ -137,6 +144,11 @@ fun ProfileScreen(
     var showReplaceDialog by remember { mutableStateOf(false) }
     var pendingOrder by remember { mutableStateOf<OrderSummary?>(null) }
     var expandedOrderIds by rememberSaveable(user?.uid) { mutableStateOf(setOf<String>()) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var isPasswordSaving by remember { mutableStateOf(false) }
 
     DisposableEffect(user?.uid) {
         if (user == null) {
@@ -595,9 +607,23 @@ fun ProfileScreen(
                     }
                     Divider()
                     MenuRow(
+                        icon = Icons.Default.VpnKey,
+                        title = if (profile?.hasPassword == true) {
+                            "Изменить пароль"
+                        } else {
+                            "Установить пароль"
+                        },
+                        onClick = {
+                            passwordInput = ""
+                            passwordError = null
+                            showPasswordDialog = true
+                        }
+                    )
+                    Divider()
+                    MenuRow(
                         icon = Icons.Default.ExitToApp,
                         title = "Выйти",
-                        onClick = { FirebaseAuth.getInstance().signOut() }
+                        onClick = { showSignOutDialog = true }
                     )
                 }
             }
@@ -628,6 +654,123 @@ fun ProfileScreen(
             dismissButton = {
                 TextButton(onClick = { showReplaceDialog = false }) {
                     Text("Нет")
+                }
+            }
+        )
+    }
+    if (showPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isPasswordSaving) {
+                    showPasswordDialog = false
+                }
+            },
+            title = {
+                Text(if (profile?.hasPassword == true) "Изменить пароль" else "Установить пароль")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { passwordInput = it },
+                        label = { Text("Пароль") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (passwordError != null) {
+                        Text(
+                            text = passwordError!!,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val user = FirebaseAuth.getInstance().currentUser
+                        val trimmed = passwordInput.trim()
+                        if (user == null) {
+                            passwordError = "Пользователь не авторизован"
+                            return@TextButton
+                        }
+                        if (trimmed.isBlank()) {
+                            passwordError = "Введите пароль"
+                            return@TextButton
+                        }
+                        passwordError = null
+                        isPasswordSaving = true
+                        val phoneValue = profile?.phone?.ifBlank { null }
+                            ?: user.phoneNumber
+                            ?: ""
+                        val email = passwordEmailForPhone(phoneValue)
+                        val hasEmailProvider = user.providerData.any {
+                            it.providerId == EmailAuthProvider.PROVIDER_ID
+                        }
+                        val task = if (hasEmailProvider) {
+                            user.updatePassword(trimmed)
+                        } else {
+                            user.linkWithCredential(
+                                EmailAuthProvider.getCredential(email, trimmed)
+                            )
+                        }
+                        task.addOnCompleteListener { updateTask ->
+                            if (!updateTask.isSuccessful) {
+                                isPasswordSaving = false
+                                passwordError = updateTask.exception?.localizedMessage
+                                    ?: "Не удалось сохранить пароль"
+                                return@addOnCompleteListener
+                            }
+                            updatePasswordStatus(
+                                enabled = true,
+                                onDone = {
+                                    isPasswordSaving = false
+                                    showPasswordDialog = false
+                                },
+                                onError = { msg ->
+                                    isPasswordSaving = false
+                                    passwordError = msg
+                                }
+                            )
+                        }
+                    },
+                    enabled = !isPasswordSaving
+                ) {
+                    Text("Сохранить")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPasswordDialog = false },
+                    enabled = !isPasswordSaving
+                ) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
+
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSignOutDialog = false },
+            title = { Text("Выйти из аккаунта") },
+            text = { Text("Вы уверены, что хотите выйти?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSignOutDialog = false
+                        FirebaseAuth.getInstance().signOut()
+                    }
+                ) {
+                    Text("Выйти")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutDialog = false }) {
+                    Text("Отмена")
                 }
             }
         )
