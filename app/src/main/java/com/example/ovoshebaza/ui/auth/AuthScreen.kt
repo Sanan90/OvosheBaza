@@ -18,8 +18,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +34,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import com.example.ovoshebaza.loadPasswordStatusForPhone
 import com.example.ovoshebaza.loadPasswordStatusForUser
 import com.example.ovoshebaza.passwordEmailForPhone
@@ -47,6 +52,7 @@ import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.auth.PhoneAuthProvider.OnVerificationStateChangedCallbacks
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
+
 
 private enum class AuthStage {
     Phone,
@@ -78,6 +84,9 @@ fun AuthScreen(
     var stage by remember { mutableStateOf(AuthStage.Phone) }
     var pendingPhone by remember { mutableStateOf("") }
     var isPasswordReset by remember { mutableStateOf(false) }
+    var showPasswordLogin by remember { mutableStateOf(false) }
+    var showPasswordSetup by remember { mutableStateOf(false) }
+    var openCodeAfterSend by remember { mutableStateOf(false) }
 
     // callbacks должны быть стабильными
     val callbacks = remember {
@@ -122,6 +131,7 @@ fun AuthScreen(
                 errorText = e.localizedMessage ?: "Ошибка отправки кода"
                 verificationId = null
                 resendSeconds = 0
+                openCodeAfterSend = false
             }
 
             override fun onCodeSent(
@@ -132,6 +142,10 @@ fun AuthScreen(
                 verificationId = verifId
                 resendToken = token
                 resendSeconds = 60
+                if (openCodeAfterSend) {
+                    stage = AuthStage.Code
+                    openCodeAfterSend = false
+                }
                 Toast.makeText(context, "Код отправлен", Toast.LENGTH_SHORT).show()
             }
         }
@@ -232,8 +246,9 @@ fun AuthScreen(
                     resendSeconds = 0
                     resendToken = null
                 } else {
-                    stage = AuthStage.Code
+
                     isPasswordReset = false
+                    openCodeAfterSend = true
                     sendCode(false)
                 }
             },
@@ -442,7 +457,27 @@ fun AuthScreen(
                     label = { Text("Пароль") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (showPasswordLogin) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showPasswordLogin = !showPasswordLogin }) {
+                            Icon(
+                                imageVector = if (showPasswordLogin) {
+                                    Icons.Filled.VisibilityOff
+                                } else {
+                                    Icons.Filled.Visibility
+                                },
+                                contentDescription = if (showPasswordLogin) {
+                                    "Скрыть пароль"
+                                } else {
+                                    "Показать пароль"
+                                }
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -518,7 +553,27 @@ fun AuthScreen(
                     label = { Text("Пароль") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (showPasswordSetup) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { showPasswordSetup = !showPasswordSetup }) {
+                            Icon(
+                                imageVector = if (showPasswordSetup) {
+                                    Icons.Filled.VisibilityOff
+                                } else {
+                                    Icons.Filled.Visibility
+                                },
+                                contentDescription = if (showPasswordSetup) {
+                                    "Скрыть пароль"
+                                } else {
+                                    "Показать пароль"
+                                }
+                            )
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Button(
@@ -537,10 +592,6 @@ fun AuthScreen(
                 }
             }
 
-            if (isLoading) {
-                CircularProgressIndicator()
-            }
-
             if (errorText != null) {
                 Text(
                     text = errorText!!,
@@ -548,5 +599,21 @@ fun AuthScreen(
                 )
             }
         }
+    }
+
+    if (isLoading) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {},
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Text("Подождите…")
+                }
+            },
+            confirmButton = {}
+        )
     }
 }
