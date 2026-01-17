@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -66,7 +67,9 @@ import androidx.compose.ui.unit.dp
 import com.example.ovoshebaza.Product
 import com.example.ovoshebaza.ProductCategory
 import com.example.ovoshebaza.UnitType
+import com.example.ovoshebaza.sendBroadcastNotification
 import com.google.firebase.firestore.FirebaseFirestore
+
 
 @Composable
 fun ProductEditDialog(
@@ -291,6 +294,10 @@ fun AdminScreen(
     var isLoadingUsers by remember { mutableStateOf(false) }
     var usersError by remember { mutableStateOf<String?>(null) }
     var users by remember { mutableStateOf<List<AdminUserSummary>>(emptyList()) }
+    var broadcastMessage by remember { mutableStateOf("") }
+    var broadcastError by remember { mutableStateOf<String?>(null) }
+    var broadcastSuccess by remember { mutableStateOf<String?>(null) }
+    var isBroadcastSending by remember { mutableStateOf(false) }
     val expandedUsers = remember { mutableStateMapOf<String, Boolean>() }
     val userOrders = remember { mutableStateMapOf<String, List<AdminOrderSummary>>() }
     val loadingOrders = remember { mutableStateMapOf<String, Boolean>() }
@@ -402,6 +409,96 @@ fun AdminScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                 }
+
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Уведомления пользователям",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Button(
+                                onClick = {
+                                    broadcastError = null
+                                    broadcastSuccess = null
+                                    isBroadcastSending = true
+                                    sendBroadcastNotification(
+                                        message = "У нас свежий завоз!!!",
+                                        onSuccess = {
+                                            isBroadcastSending = false
+                                            broadcastSuccess = "Уведомление отправлено"
+                                        },
+                                        onError = { msg ->
+                                            isBroadcastSending = false
+                                            broadcastError = msg
+                                        }
+                                    )
+                                },
+                                enabled = !isBroadcastSending,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Получили новый завоз")
+                            }
+                            OutlinedTextField(
+                                value = broadcastMessage,
+                                onValueChange = { broadcastMessage = it },
+                                label = { Text("Свое сообщение") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Button(
+                                onClick = {
+                                    val trimmed = broadcastMessage.trim()
+                                    if (trimmed.isBlank()) {
+                                        broadcastError = "Введите сообщение"
+                                        return@Button
+                                    }
+                                    broadcastError = null
+                                    broadcastSuccess = null
+                                    isBroadcastSending = true
+                                    sendBroadcastNotification(
+                                        message = trimmed,
+                                        onSuccess = {
+                                            isBroadcastSending = false
+                                            broadcastSuccess = "Уведомление отправлено"
+                                            broadcastMessage = ""
+                                        },
+                                        onError = { msg ->
+                                            isBroadcastSending = false
+                                            broadcastError = msg
+                                        }
+                                    )
+                                },
+                                enabled = !isBroadcastSending,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Отправить")
+                            }
+                            if (broadcastSuccess != null) {
+                                Text(
+                                    text = broadcastSuccess ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            if (broadcastError != null) {
+                                Text(
+                                    text = broadcastError ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+
 
                 if (selectedTab == AdminTab.PRODUCTS) {
                     item {
@@ -599,7 +696,26 @@ fun AdminScreen(
             onDismiss = { showAddDialog = false }
         )
     }
+
+
+    if (isBroadcastSending) {
+        AlertDialog(
+            onDismissRequest = {},
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator()
+                    Text("Отправляем уведомление…")
+                }
+            },
+            confirmButton = {}
+        )
+    }
 }
+
+
 
 @Composable
 private fun AdminBottomTab(

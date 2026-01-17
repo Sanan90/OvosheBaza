@@ -27,6 +27,8 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.google.firebase.functions.ktx.functions
+import com.google.firebase.ktx.Firebase
 
 const val ORDER_STATUS_CHANNEL_ID = "order_status"
 private const val ORDER_STATUS_CHANNEL_NAME = "Статусы заказов"
@@ -103,6 +105,28 @@ fun fetchAndSaveFcmToken(
             onError(e.message ?: "Не удалось получить FCM токен")
         }
 }
+
+fun sendBroadcastNotification(
+    title: String = "Овощебаза",
+    message: String,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val functions = Firebase.functions
+    val payload = mapOf(
+        "title" to title,
+        "text" to message
+    )
+
+    functions
+        .getHttpsCallable("sendBroadcastNotification")
+        .call(payload)
+        .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Ошибка отправки уведомления")
+        }
+}
+
 
 @Composable
 fun NotificationSetup() {

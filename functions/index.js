@@ -162,6 +162,54 @@ exports.sendOrderToTelegram = onCall(
   }
 );
 
+exports.sendBroadcastNotification = onCall({ cors: true }, async (request) => {
+  const data = request.data || {};
+  const text = String(data.text || "").trim();
+  const title = String(data.title || "Овощебаза").trim();
+
+  if (!text) {
+    throw new Error("Пустое сообщение");
+  }
+
+  const usersSnapshot = await admin.firestore().collection("users").get();
+  const tokensSet = new Set();
+
+  usersSnapshot.forEach((doc) => {
+    const tokens = doc.get("fcmTokens");
+    if (Array.isArray(tokens)) {
+      tokens.forEach((token) => {
+        if (typeof token === "string" && token.trim()) {
+          tokensSet.add(token.trim());
+        }
+      });
+    }
+  });
+
+  const tokens = Array.from(tokensSet);
+  if (tokens.length === 0) {
+    return { ok: false, success: 0, failure: 0, message: "Нет токенов" };
+  }
+
+  let success = 0;
+  let failure = 0;
+  const chunkSize = 500;
+  for (let i = 0; i < tokens.length; i += chunkSize) {
+    const chunk = tokens.slice(i, i + chunkSize);
+   const response = await admin.messaging().sendEachForMulticast({
+      tokens: chunk,
+      notification: {
+        title,
+        body: text,
+      },
+    });
+    success += response.successCount;
+    failure += response.failureCount;
+  }
+
+  return { ok: true, success, failure };
+});
+
+
 function baseOrderText(text) {
   const lines = String(text || "").split("\n");
   const filtered = lines.filter(
