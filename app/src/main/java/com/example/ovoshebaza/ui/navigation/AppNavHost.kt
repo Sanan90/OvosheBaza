@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -77,9 +78,12 @@ fun AppNavHost(
         modifier = modifier
     ) {
         composable(Screen.Catalog.route) {
+            var catalogSearchQuery by rememberSaveable { mutableStateOf("") }
             CatalogScreen(
                 products = products,
                 cartItems = cartItems,
+                searchQuery = catalogSearchQuery,
+                onSearchQueryChange = { catalogSearchQuery = it },
                 onAddToCart = onAddToCart,
                 onUpdateQuantity = onUpdateQuantity,
                 onOpenDetails = { product ->

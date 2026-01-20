@@ -104,12 +104,13 @@ sealed class CatalogFilter {
 fun CatalogScreen(
     products: List<Product>,
     cartItems: List<CartItem>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     onAddToCart: (Product, Double) -> Unit,
     onUpdateQuantity: (String, Double) -> Unit,
     onOpenDetails: (Product) -> Unit
 ) {
     var selectedFilter by remember { mutableStateOf<CatalogFilter>(CatalogFilter.All) }
-    var searchQuery by remember { mutableStateOf("") }
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
 
@@ -223,7 +224,7 @@ fun CatalogScreen(
                 ) {
                     TextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = onSearchQueryChange,
                         placeholder = { Text("Поиск по названию") },
                         leadingIcon = {
                             Icon(
@@ -409,17 +410,22 @@ fun CategoryPromoRow(
                         painter = painterResource(id = item.iconRes),
                         contentDescription = item.title,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier.size(62.dp) // ⬅️ заметно больше
+                        modifier = Modifier.size(56.dp) // ⬅️ чуть меньше для текста
                     )
 
                     Text(
                         text = item.title,
-                        maxLines = 1,
-                        softWrap = false,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        )
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            lineHeight = 14.sp
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp)
                     )
                 }
             }

@@ -10,6 +10,32 @@ const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
 
 admin.initializeApp();
 
+exports.autoCompleteStaleOrders = onSchedule("every 60 minutes", async () => {
+  const db = admin.firestore();
+  const now = Date.now();
+  const cutoff = now - 12 * 60 * 60 * 1000;
+
+  const snapshot = await db
+    .collectionGroup("orders")
+    .where("status", "in", ["RECEIVED", "ACCEPTED", "IN_TRANSIT"])
+    .where("statusUpdatedAt", "<", cutoff)
+    .get();
+
+  if (snapshot.empty) {
+    logger.info("autoCompleteStaleOrders: no stale orders");
+    return;
+  }
+
+  const batch = db.batch();
+  snapshot.docs.forEach((doc) => {
+    batch.update(doc.ref, { status: "DONE", statusUpdatedAt: now });
+  });
+
+  await batch.commit();
+  logger.info("autoCompleteStaleOrders: updated orders", { count: snapshot.size });
+});
+
+
 // Красивое число: убираем 0.30000000004 и лишние нули
 function fmtNum(n, digits = 3) {
   const x = Number(n);
