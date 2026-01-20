@@ -106,6 +106,43 @@ fun fetchAndSaveFcmToken(
         }
 }
 
+fun removeFcmToken(
+    onDone: () -> Unit = {},
+    onError: (String) -> Unit = {}
+) {
+    val user = FirebaseAuth.getInstance().currentUser
+    if (user == null) {
+        onError("Пользователь не авторизован")
+        return
+    }
+
+    FirebaseMessaging.getInstance().token
+        .addOnSuccessListener { token ->
+            val data = mapOf(
+                "fcmTokens" to FieldValue.arrayRemove(token),
+                "updatedAt" to System.currentTimeMillis()
+            )
+            FirebaseFirestore.getInstance()
+                .collection("users")
+                .document(user.uid)
+                .set(data, SetOptions.merge())
+                .addOnSuccessListener {
+                    FirebaseMessaging.getInstance().deleteToken()
+                        .addOnSuccessListener { onDone() }
+                        .addOnFailureListener { e ->
+                            onError(e.message ?: "Не удалось удалить FCM токен")
+                        }
+                }
+                .addOnFailureListener { e ->
+                    onError(e.message ?: "Не удалось удалить FCM токен")
+                }
+        }
+        .addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось получить FCM токен")
+        }
+}
+
+
 fun sendBroadcastNotification(
     title: String = "Овощебаза",
     message: String,

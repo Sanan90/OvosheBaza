@@ -1,4 +1,6 @@
 package com.example.ovoshebaza.domain.model
 
-class CartItem {
-}
+data class CartItem(
+    val product: Product,
+    val quantity: Double
+)

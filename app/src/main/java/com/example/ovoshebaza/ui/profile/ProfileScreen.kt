@@ -84,6 +84,7 @@ import com.example.ovoshebaza.passwordEmailForPhone
 import com.example.ovoshebaza.setCachedUserProfile
 import com.example.ovoshebaza.updatePasswordStatus
 import com.google.firebase.auth.FirebaseAuth
+import com.example.ovoshebaza.removeFcmToken
 import com.google.firebase.auth.EmailAuthProvider
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -789,8 +790,16 @@ fun ProfileScreen(
                     onClick = {
                         showSignOutDialog = false
                         isSigningOut = true
-                        FirebaseAuth.getInstance().signOut()
-                        isSigningOut = false
+                        removeFcmToken(
+                            onDone = {
+                                FirebaseAuth.getInstance().signOut()
+                                isSigningOut = false
+                            },
+                            onError = {
+                                FirebaseAuth.getInstance().signOut()
+                                isSigningOut = false
+                            }
+                        )
                     }
                 ) {
                     Text("Выйти")

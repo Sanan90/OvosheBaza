@@ -1,5 +1,7 @@
 package com.example.ovoshebaza
 
+import java.math.BigDecimal
+
 // ============== ЭКРАНЫ ==============
 
 enum class PaymentMethod(val label: String) {
@@ -29,18 +31,25 @@ fun buildOrderMap(
     discount: Double,
     total: Double
 ): Map<String, Any> {
+    fun moneyToDouble(value: BigDecimal): Double = value.toDouble()
+
     val items = cartItems.map { item ->
+        val lineSum = BigDecimal.valueOf(item.product.price)
+            .multiply(BigDecimal.valueOf(item.quantity))
         mapOf(
             "id" to item.product.id,
             "name" to item.product.name,
             "quantity" to item.quantity,
             "unit" to item.product.unit.name,   // "KG" или "PIECE"
             "price" to item.product.price,
-            "sum" to (item.product.price * item.quantity)
+            "sum" to moneyToDouble(lineSum)
         )
     }
 
-    val subtotal = cartItems.sumOf { it.product.price * it.quantity }
+    val subtotal = cartItems.fold(BigDecimal.ZERO) { acc, item ->
+        acc + BigDecimal.valueOf(item.product.price)
+            .multiply(BigDecimal.valueOf(item.quantity))
+    }
     val now = System.currentTimeMillis()
 
     return mapOf(
@@ -53,7 +62,7 @@ fun buildOrderMap(
         "paymentMethod" to paymentMethod.name,
         "deliveryFee" to deliveryFee,
         "discount" to discount,
-        "subtotal" to subtotal,
+        "subtotal" to moneyToDouble(subtotal),
         "total" to total,
         "status" to "RECEIVED",
         "statusUpdatedAt" to now,

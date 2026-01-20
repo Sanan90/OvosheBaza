@@ -14,7 +14,7 @@ fun sendOrderViaTelegram(context: Context, message: String) {
     clipboard.setPrimaryClip(clip)
 
     val pm = context.packageManager
-    val username = "Mafee90"
+    val username = Constants.TELEGRAM_USERNAME
 
     try {
         // 2. Сначала пробуем открыть Telegram напрямую через tg://

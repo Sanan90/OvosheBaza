@@ -1,7 +1,6 @@
 package com.example.ovoshebaza.ui.auth
 
 import android.app.Activity
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,11 +20,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,20 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import com.example.ovoshebaza.loadPasswordStatusForPhone
-import com.example.ovoshebaza.loadPasswordStatusForUser
-import com.example.ovoshebaza.passwordEmailForPhone
-import com.example.ovoshebaza.updatePasswordStatus
-import com.google.firebase.FirebaseException
-import com.google.firebase.auth.EmailAuthProvider
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthOptions
-import com.google.firebase.auth.PhoneAuthProvider
-import com.google.firebase.auth.PhoneAuthProvider.OnVerificationStateChangedCallbacks
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.delay
-
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 private enum class AuthStage {
     Phone,
@@ -68,328 +50,11 @@ fun AuthScreen(
 ) {
     val context = LocalContext.current
     val activity = context as Activity
-    val auth = remember { FirebaseAuth.getInstance() }
-    val phonePrefix = "+"
+    val viewModel: AuthViewModel = viewModel()
+    viewModel.updateSignedInCallback(onSignedIn)
 
-    var phone by remember { mutableStateOf(phonePrefix) }
-    var code by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var resendSeconds by remember { mutableStateOf(0) }
-
-    var isLoading by remember { mutableStateOf(false) }
-    var errorText by remember { mutableStateOf<String?>(null) }
-
-    var verificationId by remember { mutableStateOf<String?>(null) }
-    var resendToken by remember { mutableStateOf<PhoneAuthProvider.ForceResendingToken?>(null) }
-    var stage by remember { mutableStateOf(AuthStage.Phone) }
-    var pendingPhone by remember { mutableStateOf("") }
-    var isPasswordReset by remember { mutableStateOf(false) }
-    var showPasswordLogin by remember { mutableStateOf(false) }
-    var showPasswordSetup by remember { mutableStateOf(false) }
-    var openCodeAfterSend by remember { mutableStateOf(false) }
-
-    // callbacks должны быть стабильными
-    val callbacks = remember {
-        object : OnVerificationStateChangedCallbacks() {
-
-            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                // Авто-подтверждение (иногда срабатывает само)
-                isLoading = true
-                auth.signInWithCredential(credential)
-                    .addOnCompleteListener { task ->
-                        isLoading = false
-                        if (task.isSuccessful) {
-                            val user = auth.currentUser
-                            if (user == null) {
-                                errorText = "Не удалось авторизоваться"
-                                return@addOnCompleteListener
-                            }
-                            if (isPasswordReset) {
-                                stage = AuthStage.SetPassword
-                                return@addOnCompleteListener
-                            }
-                            loadPasswordStatusForUser(
-                                uid = user.uid,
-                                onResult = { hasPassword ->
-                                    if (hasPassword) {
-                                        onSignedIn()
-                                    } else {
-                                        stage = AuthStage.SetPassword
-                                    }
-                                },
-                                onError = { msg ->
-                                    errorText = msg
-                                }
-                            )                        } else {
-                            errorText = task.exception?.localizedMessage ?: "Ошибка авторизации"
-                        }
-                    }
-            }
-
-            override fun onVerificationFailed(e: FirebaseException) {
-                isLoading = false
-                errorText = e.localizedMessage ?: "Ошибка отправки кода"
-                verificationId = null
-                resendSeconds = 0
-                openCodeAfterSend = false
-            }
-
-            override fun onCodeSent(
-                verifId: String,
-                token: PhoneAuthProvider.ForceResendingToken
-            ) {
-                isLoading = false
-                verificationId = verifId
-                resendToken = token
-                resendSeconds = 60
-                if (openCodeAfterSend) {
-                    stage = AuthStage.Code
-                    openCodeAfterSend = false
-                }
-                Toast.makeText(context, "Код отправлен", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    fun sendCode(forceResend: Boolean) {
-        errorText = null
-        val phoneTrim = phone.trim()
-
-        if (phoneTrim.length <= phonePrefix.length || !phoneTrim.startsWith(phonePrefix)) {
-            errorText = "Введите номер в формате +7..., начиная с 9"
-            verificationId = null
-            resendSeconds = 0
-            return
-        }
-
-        isLoading = true
-
-        val optionsBuilder = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(phoneTrim)
-            .setTimeout(60L, TimeUnit.SECONDS)
-            .setActivity(activity)
-            .setCallbacks(callbacks)
-
-        if (forceResend && resendToken != null) {
-            optionsBuilder.setForceResendingToken(resendToken!!)
-        }
-
-        PhoneAuthProvider.verifyPhoneNumber(optionsBuilder.build())
-    }
-
-
-
-    fun confirmCode() {
-        errorText = null
-        val vId = verificationId
-        val codeTrim = code.trim()
-
-        if (vId.isNullOrBlank()) {
-            errorText = "Сначала запросите код"
-            return
-        }
-        if (codeTrim.length < 4) {
-            errorText = "Введите код из SMS"
-            return
-        }
-
-        isLoading = true
-        val credential = PhoneAuthProvider.getCredential(vId, codeTrim)
-        auth.signInWithCredential(credential)
-            .addOnCompleteListener { task ->
-                isLoading = false
-                if (task.isSuccessful) {
-                    val user = auth.currentUser
-                    if (user == null) {
-                        errorText = "Не удалось авторизоваться"
-                        return@addOnCompleteListener
-                    }
-                    if (isPasswordReset) {
-                        stage = AuthStage.SetPassword
-                        return@addOnCompleteListener
-                    }
-                    loadPasswordStatusForUser(
-                        uid = user.uid,
-                        onResult = { hasPassword ->
-                            if (hasPassword) {
-                                onSignedIn()
-                            } else {
-                                stage = AuthStage.SetPassword
-                            }
-                        },
-                        onError = { msg -> errorText = msg }
-                    )
-                } else {
-                    errorText = task.exception?.localizedMessage ?: "Неверный код"
-                }
-            }
-    }
-
-    fun requestPhone() {
-        errorText = null
-        val phoneTrim = phone.trim()
-        if (phoneTrim.length <= phonePrefix.length || !phoneTrim.startsWith(phonePrefix)) {
-            errorText = "Введите номер в формате +7..., начиная с 9"
-            return
-        }
-
-        isLoading = true
-        pendingPhone = phoneTrim
-        loadPasswordStatusForPhone(
-            phone = phoneTrim,
-            onResult = { hasPassword ->
-                isLoading = false
-                if (hasPassword) {
-                    stage = AuthStage.PasswordLogin
-                    password = ""
-                    verificationId = null
-                    resendSeconds = 0
-                    resendToken = null
-                } else {
-
-                    isPasswordReset = false
-                    openCodeAfterSend = true
-                    sendCode(false)
-                }
-            },
-            onError = { msg ->
-                isLoading = false
-                errorText = msg
-            }
-        )
-    }
-
-    //    временный код. Удалить----------
-    fun quickTestSignIn() {
-        phone = "+79999999999"
-        code = ""
-        requestPhone()
-    }
-//   до сюда--------------------------
-
-
-    fun loginWithPassword() {
-        errorText = null
-        val passwordTrim = password.trim()
-        if (passwordTrim.isBlank()) {
-            errorText = "Введите пароль"
-            return
-        }
-        val phoneTrim = pendingPhone.ifBlank { phone.trim() }
-        if (phoneTrim.isBlank()) {
-            errorText = "Введите номер телефона"
-            stage = AuthStage.Phone
-            return
-        }
-        isLoading = true
-        val email = passwordEmailForPhone(phoneTrim)
-        auth.signInWithEmailAndPassword(email, passwordTrim)
-            .addOnCompleteListener { task ->
-                isLoading = false
-                if (task.isSuccessful) {
-                    onSignedIn()
-                } else {
-                    errorText = task.exception?.localizedMessage ?: "Неверный пароль"
-                }
-            }
-    }
-
-    fun savePassword() {
-        errorText = null
-        val passwordTrim = password.trim()
-        if (passwordTrim.isBlank()) {
-            errorText = "Введите пароль"
-            return
-        }
-        val user = auth.currentUser
-        if (user == null) {
-            errorText = "Не удалось авторизоваться"
-            return
-        }
-        val phoneValue = user.phoneNumber ?: pendingPhone
-        if (phoneValue.isBlank()) {
-            errorText = "Не удалось определить номер телефона"
-            return
-        }
-        val email = passwordEmailForPhone(phoneValue)
-        val hasEmailProvider = user.providerData.any { it.providerId == EmailAuthProvider.PROVIDER_ID }
-        val task = if (hasEmailProvider) {
-            user.updatePassword(passwordTrim)
-        } else {
-            user.linkWithCredential(
-                EmailAuthProvider.getCredential(email, passwordTrim)
-            )
-        }
-        isLoading = true
-        task.addOnCompleteListener { updateTask ->
-            if (!updateTask.isSuccessful) {
-                isLoading = false
-                errorText = updateTask.exception?.localizedMessage ?: "Не удалось сохранить пароль"
-                return@addOnCompleteListener
-            }
-            updatePasswordStatus(
-                enabled = true,
-                onDone = {
-                    isLoading = false
-                    onSignedIn()
-                },
-                onError = { msg ->
-                    isLoading = false
-                    errorText = msg
-                }
-            )
-        }
-    }
-
-    fun disablePasswordAndContinue() {
-        errorText = null
-        val user = auth.currentUser
-        if (user == null) {
-            errorText = "Не удалось авторизоваться"
-            return
-        }
-        isLoading = true
-        val hasEmailProvider = user.providerData.any { it.providerId == EmailAuthProvider.PROVIDER_ID }
-        val task = if (hasEmailProvider) {
-            user.unlink(EmailAuthProvider.PROVIDER_ID)
-        } else {
-            null
-        }
-
-        val finish: () -> Unit = {
-            updatePasswordStatus(
-                enabled = false,
-                onDone = {
-                    isLoading = false
-                    onSignedIn()
-                },
-                onError = { msg ->
-                    isLoading = false
-                    errorText = msg
-                }
-            )
-        }
-
-        if (task == null) {
-            finish()
-        } else {
-            task.addOnCompleteListener { unlinkTask ->
-                if (!unlinkTask.isSuccessful) {
-                    isLoading = false
-                    errorText = unlinkTask.exception?.localizedMessage ?: "Не удалось отключить пароль"
-                    return@addOnCompleteListener
-                }
-                finish()
-            }
-        }
-    }
-
-
-    LaunchedEffect(verificationId, resendSeconds) {
-        if (verificationId != null && resendSeconds > 0) {
-            delay(1000)
-            resendSeconds -= 1
-        }
+    LaunchedEffect(viewModel.resendSeconds) {
+        viewModel.tickResendCountdown()
     }
 
 
@@ -409,16 +74,16 @@ fun AuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            if (stage == AuthStage.Phone) {
+            if (viewModel.stage == AuthViewModel.AuthStage.Phone) {
                 OutlinedTextField(
-                    value = phone,
+                    value = viewModel.phone,
                     onValueChange = { input ->
                         val sanitized = input.replace(" ", "")
-                        phone = if (sanitized.startsWith(phonePrefix)) {
+                        viewModel.phone = if (sanitized.startsWith("+")) {
                             sanitized
                         } else {
                             val trimmed = sanitized.removePrefix("+").removePrefix("7")
-                            phonePrefix + trimmed
+                            "+" + trimmed
                         }
                     },
                     label = { Text("Телефон") },
@@ -429,8 +94,8 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { requestPhone() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.requestPhone(activity, context) },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Продолжить")
@@ -440,8 +105,8 @@ fun AuthScreen(
                 //    временный код. Удалить--------------------------------------
 
                 OutlinedButton(
-                    onClick = { quickTestSignIn() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.quickTestSignIn(activity, context) },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Тестовый вход (+79999999999)")
@@ -450,27 +115,29 @@ fun AuthScreen(
             }
 
 
-            if (stage == AuthStage.PasswordLogin) {
+            if (viewModel.stage == AuthViewModel.AuthStage.PasswordLogin) {
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
+                    value = viewModel.password,
+                    onValueChange = { viewModel.password = it },
                     label = { Text("Пароль") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = if (showPasswordLogin) {
+                    visualTransformation = if (viewModel.showPasswordLogin) {
                         VisualTransformation.None
                     } else {
                         PasswordVisualTransformation()
                     },
                     trailingIcon = {
-                        IconButton(onClick = { showPasswordLogin = !showPasswordLogin }) {
+                        IconButton(onClick = {
+                            viewModel.showPasswordLogin = !viewModel.showPasswordLogin
+                        }) {
                             Icon(
-                                imageVector = if (showPasswordLogin) {
+                                imageVector = if (viewModel.showPasswordLogin) {
                                     Icons.Filled.VisibilityOff
                                 } else {
                                     Icons.Filled.Visibility
                                 },
-                                contentDescription = if (showPasswordLogin) {
+                                contentDescription = if (viewModel.showPasswordLogin) {
                                     "Скрыть пароль"
                                 } else {
                                     "Показать пароль"
@@ -482,8 +149,8 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { loginWithPassword() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.loginWithPassword() },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Войти")
@@ -491,23 +158,18 @@ fun AuthScreen(
 
                 TextButton(
                     onClick = {
-                        isPasswordReset = true
-                        code = ""
-                        verificationId = null
-                        resendSeconds = 0
-                        sendCode(false)
-                        stage = AuthStage.Code
+                        viewModel.enterPasswordReset(activity, context)
                     },
-                    enabled = !isLoading
+                    enabled = !viewModel.isLoading
                 ) {
                     Text("Войти через код проверки")
                 }
             }
 
-            if (stage == AuthStage.Code) {
+            if (viewModel.stage == AuthViewModel.AuthStage.Code) {
                 OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it },
+                    value = viewModel.code,
+                    onValueChange = { viewModel.code = it },
                     label = { Text("Код из SMS") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -515,19 +177,19 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { confirmCode() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.confirmCode() },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Войти")
                 }
 
-                if (resendSeconds > 0) {
-                    Text("Повторная отправка через $resendSeconds сек.")
+                if (viewModel.resendSeconds > 0) {
+                    Text("Повторная отправка через ${viewModel.resendSeconds} сек.")
                 } else {
                     TextButton(
-                        onClick = { sendCode(true) },
-                        enabled = !isLoading
+                        onClick = { viewModel.sendCode(activity, context, true) },
+                        enabled = !viewModel.isLoading
                     ) {
                         Text(
                             text = buildAnnotatedString {
@@ -542,31 +204,33 @@ fun AuthScreen(
                 }
             }
 
-            if (stage == AuthStage.SetPassword) {
+            if (viewModel.stage == AuthViewModel.AuthStage.SetPassword) {
                 Text(
-                    text = if (isPasswordReset) "Новый пароль" else "Установите пароль",
+                    text = if (viewModel.isPasswordReset) "Новый пароль" else "Установите пароль",
                     style = MaterialTheme.typography.titleMedium
                 )
                 OutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
+                    value = viewModel.password,
+                    onValueChange = { viewModel.password = it },
                     label = { Text("Пароль") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = if (showPasswordSetup) {
+                    visualTransformation = if (viewModel.showPasswordSetup) {
                         VisualTransformation.None
                     } else {
                         PasswordVisualTransformation()
                     },
                     trailingIcon = {
-                        IconButton(onClick = { showPasswordSetup = !showPasswordSetup }) {
+                        IconButton(onClick = {
+                            viewModel.showPasswordSetup = !viewModel.showPasswordSetup
+                        }) {
                             Icon(
-                                imageVector = if (showPasswordSetup) {
+                                imageVector = if (viewModel.showPasswordSetup) {
                                     Icons.Filled.VisibilityOff
                                 } else {
                                     Icons.Filled.Visibility
                                 },
-                                contentDescription = if (showPasswordSetup) {
+                                contentDescription = if (viewModel.showPasswordSetup) {
                                     "Скрыть пароль"
                                 } else {
                                     "Показать пароль"
@@ -577,31 +241,31 @@ fun AuthScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Button(
-                    onClick = { savePassword() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.savePassword() },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Сохранить и войти")
                 }
                 OutlinedButton(
-                    onClick = { disablePasswordAndContinue() },
-                    enabled = !isLoading,
+                    onClick = { viewModel.disablePasswordAndContinue() },
+                    enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Войти без пароля")
                 }
             }
 
-            if (errorText != null) {
+            if (viewModel.errorText != null) {
                 Text(
-                    text = errorText!!,
+                    text = viewModel.errorText!!,
                     color = MaterialTheme.colorScheme.error
                 )
             }
         }
     }
 
-    if (isLoading) {
+    if (viewModel.isLoading) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = {},
             text = {
