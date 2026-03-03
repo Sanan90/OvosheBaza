@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.ovoshebaza.buildRequestMap
 import com.example.ovoshebaza.sendOrderViaFirebaseTelegram
+import com.example.ovoshebaza.ui.components.rememberClickGate
 
 @Composable
 fun RequestProductScreen() {
@@ -39,6 +40,7 @@ fun RequestProductScreen() {
     var requestedQuantity by remember { mutableStateOf("") }
     var comment by remember { mutableStateOf("") }
     var isSendingRequest by remember { mutableStateOf(false) }
+    val requestClickGate = rememberClickGate()
 
     var errorText by remember { mutableStateOf<String?>(null) }
 
@@ -120,6 +122,7 @@ fun RequestProductScreen() {
 
         Button(
             onClick = {
+                if (!requestClickGate()) return@Button
                 when {
                     requestedProduct.isBlank() -> {
                         errorText = "Пожалуйста, укажите, какой товар вам нужен."

@@ -95,6 +95,7 @@ fun AppNavHost(
         composable(Screen.Cart.route) {
             CartScreen(
                 cartItems = cartItems,
+                products = products,
                 onUpdateQuantity = onUpdateQuantity,
                 onRemoveFromCart = onRemoveFromCart,
                 onClearCart = onClearCart

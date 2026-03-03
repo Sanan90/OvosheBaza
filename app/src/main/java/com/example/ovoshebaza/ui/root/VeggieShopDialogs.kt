@@ -19,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
+import com.example.ovoshebaza.ui.components.rememberClickGate
+
 @Composable
 fun SupportDialog(
     visible: Boolean,
@@ -32,6 +34,7 @@ fun SupportDialog(
     onSend: () -> Unit
 ) {
     if (!visible) return
+    val sendClickGate = rememberClickGate()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -67,7 +70,13 @@ fun SupportDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onSend) {
+            TextButton(
+                onClick = {
+                    if (sendClickGate()) {
+                        onSend()
+                    }
+                }
+            ) {
                 Text("Отправить")
             }
         },

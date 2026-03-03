@@ -58,6 +58,7 @@ import coil.compose.AsyncImage
 import com.example.ovoshebaza.CartItem
 import com.example.ovoshebaza.Constants.DELIVERY_FEE_RUB
 import com.example.ovoshebaza.PaymentMethod
+import com.example.ovoshebaza.Product
 import com.example.ovoshebaza.UnitType
 import com.example.ovoshebaza.buildOrderMap
 import com.example.ovoshebaza.formatQuantity
@@ -65,12 +66,14 @@ import com.example.ovoshebaza.loadUserProfile
 import com.example.ovoshebaza.saveOrderToHistory
 import com.example.ovoshebaza.saveUserProfileFromOrder
 import com.example.ovoshebaza.sendOrderViaFirebaseTelegram
+import com.example.ovoshebaza.ui.components.rememberClickGate
 import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CartScreen(
     cartItems: List<CartItem>,
+    products: List<Product>,
     onUpdateQuantity: (String, Double) -> Unit,
     onRemoveFromCart: (String) -> Unit,
     onClearCart: () -> Unit
@@ -130,6 +133,97 @@ fun CartScreen(
 
     // Текст ошибки в диалоге
     var errorText by remember { mutableStateOf<String?>(null) }
+    val orderClickGate = rememberClickGate()
+
+    var showPriceConfirm by remember { mutableStateOf(false) }
+    var priceChanges by remember { mutableStateOf<List<Pair<CartItem, Product>>>(emptyList()) }
+    var syncedCartItems by remember { mutableStateOf<List<CartItem>>(emptyList()) }
+
+    fun submitOrder(cartItemsForOrder: List<CartItem>, subtotal: Double) {
+        isSendingOrder = true
+
+        val discount = if (paymentMethod == PaymentMethod.CASH) {
+            subtotal * paymentDiscountPercent
+        } else {
+            0.0
+        }
+        val total = subtotal - discount + deliveryFee
+
+        val order = buildOrderMap(
+            cartItems = cartItemsForOrder,
+            customerName = customerName,
+            customerPhone = customerPhone,
+            customerAddress = customerAddress,
+            comment = customerComment,
+            paymentMethod = paymentMethod,
+            deliveryFee = deliveryFee,
+            discount = discount,
+            total = total
+        )
+
+        saveOrderToHistory(
+            order = order,
+            channel = "TELEGRAM",
+            onDone = { orderId ->
+                val user = FirebaseAuth.getInstance().currentUser
+                if (user == null) {
+                    isSendingOrder = false
+                    Toast.makeText(
+                        context,
+                        "Пользователь не авторизован",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@saveOrderToHistory
+                }
+                val payload = order.toMutableMap().apply {
+                    put("uid", user.uid)
+                    put("orderId", orderId)
+                }
+                sendOrderViaFirebaseTelegram(
+                    context = context,
+                    order = payload,
+                    onSuccess = {
+                        saveUserProfileFromOrder(
+                            name = customerName,
+                            phone = customerPhone,
+                            address = customerAddress
+                        )
+
+                        onClearCart()
+                        isSendingOrder = false
+                        Toast.makeText(
+                            context,
+                            "Заказ отправлен в Telegram ✅",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        showOrderDialog = false
+
+                        // (по желанию) очистка полей после успешной отправки:
+                        customerName = ""
+                        customerPhone = ""
+                        customerAddress = ""
+                        customerComment = ""
+                    },
+                    onError = { err ->
+                        isSendingOrder = false
+                        Toast.makeText(
+                            context,
+                            "Ошибка отправки: $err",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                )
+            },
+            onError = { err ->
+                isSendingOrder = false
+                Toast.makeText(
+                    context,
+                    "Ошибка сохранения: $err",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -297,6 +391,7 @@ fun CartScreen(
                 Row {
                     TextButton(
                         onClick = {
+                            if (!orderClickGate()) return@TextButton
                             // проверка полей (как у тебя)
                             when {
                                 customerName.isBlank() -> errorText = "Пожалуйста, укажите имя."
@@ -309,89 +404,38 @@ fun CartScreen(
                                 else -> {
                                     errorText = null
 
-                                    isSendingOrder = true
-
-                                    val discount = if (paymentMethod == PaymentMethod.CASH) {
-                                        itemsSubtotal * paymentDiscountPercent
-                                    } else {
-                                        0.0
+                                    val availabilityIssues = cartItems.filter { item ->
+                                        val latest = products.find { it.id == item.product.id }
+                                        latest == null || !latest.inStock
                                     }
-                                    val total = itemsSubtotal - discount + deliveryFee
+                                    if (availabilityIssues.isNotEmpty()) {
+                                        errorText = "Некоторые товары недоступны. Обновите корзину."
+                                        return@TextButton
+                                    }
 
-                                    val order = buildOrderMap(
-                                        cartItems = cartItems,
-                                        customerName = customerName,
-                                        customerPhone = customerPhone,
-                                        customerAddress = customerAddress,
-                                        comment = customerComment,
-                                        paymentMethod = paymentMethod,
-                                        deliveryFee = deliveryFee,
-                                        discount = discount,
-                                        total = total
-                                    )
-
-                                    saveOrderToHistory(
-                                        order = order,
-                                        channel = "TELEGRAM",
-                                        onDone = { orderId ->
-                                            val user = FirebaseAuth.getInstance().currentUser
-                                            if (user == null) {
-                                                isSendingOrder = false
-                                                Toast.makeText(
-                                                    context,
-                                                    "Пользователь не авторизован",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
-                                                return@saveOrderToHistory
-                                            }
-                                            val payload = order.toMutableMap().apply {
-                                                put("uid", user.uid)
-                                                put("orderId", orderId)
-                                            }
-                                            sendOrderViaFirebaseTelegram(
-                                                context = context,
-                                                order = payload,
-                                                onSuccess = {
-                                                    saveUserProfileFromOrder(
-                                                        name = customerName,
-                                                        phone = customerPhone,
-                                                        address = customerAddress
-                                                    )
-
-                                                    onClearCart()
-                                                    isSendingOrder = false
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Заказ отправлен в Telegram ✅",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                    showOrderDialog = false
-
-                                                    // (по желанию) очистка полей после успешной отправки:
-                                                    customerName = ""
-                                                    customerPhone = ""
-                                                    customerAddress = ""
-                                                    customerComment = ""
-                                                },
-                                                onError = { err ->
-                                                    isSendingOrder = false
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Ошибка отправки: $err",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
-                                                }
-                                            )
-                                        },
-                                        onError = { err ->
-                                            isSendingOrder = false
-                                            Toast.makeText(
-                                                context,
-                                                "Ошибка сохранения: $err",
-                                                Toast.LENGTH_LONG
-                                            ).show()
+                                    val changes = cartItems.mapNotNull { item ->
+                                        val latest = products.find { it.id == item.product.id }
+                                        if (latest != null && latest.price != item.product.price) {
+                                            item to latest
+                                        } else {
+                                            null
                                         }
-                                    )
+                                    }
+                                    if (changes.isNotEmpty()) {
+                                        priceChanges = changes
+                                        syncedCartItems = cartItems.map { item ->
+                                            val latest = products.find { it.id == item.product.id }
+                                            if (latest != null) {
+                                                item.copy(product = latest)
+                                            } else {
+                                                item
+                                            }
+                                        }
+                                        showPriceConfirm = true
+                                        return@TextButton
+                                    }
+
+                                    submitOrder(cartItems, itemsSubtotal)
                                 }
                             }
                         },
@@ -428,6 +472,42 @@ fun CartScreen(
                 }
             },
             confirmButton = {}
+        )
+    }
+
+    if (showPriceConfirm) {
+        AlertDialog(
+            onDismissRequest = { showPriceConfirm = false },
+            title = { Text("Изменились цены") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    priceChanges.forEach { (oldItem, newProduct) ->
+                        Text(
+                            text = "${oldItem.product.name}: " +
+                                    "${oldItem.product.price} → ${newProduct.price}"
+                        )
+                    }
+                    Text("Продолжить оформление с обновлёнными ценами?")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPriceConfirm = false
+                        val updatedSubtotal = syncedCartItems.sumOf {
+                            it.product.price * it.quantity
+                        }
+                        submitOrder(syncedCartItems, updatedSubtotal)
+                    }
+                ) {
+                    Text("Продолжить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPriceConfirm = false }) {
+                    Text("Отмена")
+                }
+            }
         )
     }
 }

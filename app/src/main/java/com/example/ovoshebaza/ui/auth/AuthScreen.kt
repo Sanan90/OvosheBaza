@@ -36,12 +36,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-private enum class AuthStage {
-    Phone,
-    Code,
-    PasswordLogin,
-    SetPassword
-}
+import com.example.ovoshebaza.ui.components.rememberClickGate
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +48,13 @@ fun AuthScreen(
     val activity = context as Activity
     val viewModel: AuthViewModel = viewModel()
     viewModel.updateSignedInCallback(onSignedIn)
+    val continueClickGate = rememberClickGate()
+    val testClickGate = rememberClickGate()
+    val loginClickGate = rememberClickGate()
+    val codeClickGate = rememberClickGate()
+    val resendClickGate = rememberClickGate()
+    val saveClickGate = rememberClickGate()
+    val disableClickGate = rememberClickGate()
 
     LaunchedEffect(viewModel.resendSeconds) {
         viewModel.tickResendCountdown()
@@ -94,7 +97,11 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.requestPhone(activity, context) },
+                    onClick = {
+                        if (continueClickGate()) {
+                            viewModel.requestPhone(activity, context)
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -105,7 +112,11 @@ fun AuthScreen(
                 //    временный код. Удалить--------------------------------------
 
                 OutlinedButton(
-                    onClick = { viewModel.quickTestSignIn(activity, context) },
+                    onClick = {
+                        if (testClickGate()) {
+                            viewModel.quickTestSignIn(activity, context)
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -149,7 +160,11 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.loginWithPassword() },
+                    onClick = {
+                        if (loginClickGate()) {
+                            viewModel.loginWithPassword()
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -158,7 +173,9 @@ fun AuthScreen(
 
                 TextButton(
                     onClick = {
-                        viewModel.enterPasswordReset(activity, context)
+                        if (codeClickGate()) {
+                            viewModel.enterPasswordReset(activity, context)
+                        }
                     },
                     enabled = !viewModel.isLoading
                 ) {
@@ -177,7 +194,11 @@ fun AuthScreen(
                 )
 
                 Button(
-                    onClick = { viewModel.confirmCode() },
+                    onClick = {
+                        if (codeClickGate()) {
+                            viewModel.confirmCode()
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -188,8 +209,11 @@ fun AuthScreen(
                     Text("Повторная отправка через ${viewModel.resendSeconds} сек.")
                 } else {
                     TextButton(
-                        onClick = { viewModel.sendCode(activity, context, true) },
-                        enabled = !viewModel.isLoading
+                        onClick = {
+                            if (resendClickGate()) {
+                                viewModel.sendCode(activity, context, true)
+                            }
+                        },                        enabled = !viewModel.isLoading
                     ) {
                         Text(
                             text = buildAnnotatedString {
@@ -241,14 +265,22 @@ fun AuthScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Button(
-                    onClick = { viewModel.savePassword() },
+                    onClick = {
+                        if (saveClickGate()) {
+                            viewModel.savePassword()
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Сохранить и войти")
                 }
                 OutlinedButton(
-                    onClick = { viewModel.disablePasswordAndContinue() },
+                    onClick = {
+                        if (disableClickGate()) {
+                            viewModel.disablePasswordAndContinue()
+                        }
+                    },
                     enabled = !viewModel.isLoading,
                     modifier = Modifier.fillMaxWidth()
                 ) {
