@@ -1,10 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
-
-    id("com.google.gms.google-services") // ← вот ЭТА строчка
-
-
+    id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics") // Crashlytics
 }
 
 android {
@@ -23,9 +21,6 @@ android {
             useSupportLibrary = true
         }
     }
-
-
-
 
     buildTypes {
         release {
@@ -60,24 +55,19 @@ dependencies {
 
     implementation("com.google.firebase:firebase-auth-ktx")
 
-    // 🔹 библиотека для загрузки изображений в Compose
+    // Библиотека для загрузки изображений в Compose
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
 
-    // 🔹 Firebase BoM
+    // Firebase BoM — одна версия управляет всеми Firebase библиотеками
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
-
-    // 🔹 Firestore Kotlin
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
-
-    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-functions-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-
-
+    implementation("com.google.firebase:firebase-analytics-ktx")   // Analytics
+    implementation("com.google.firebase:firebase-crashlytics-ktx") // Crashlytics
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

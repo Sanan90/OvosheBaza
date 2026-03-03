@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 class AuthViewModel : ViewModel() {
     enum class AuthStage {
@@ -72,6 +73,8 @@ class AuthViewModel : ViewModel() {
                             uid = user.uid,
                             onResult = { hasPassword ->
                                 if (hasPassword) {
+                                    // Привязываем пользователя к Crashlytics — теперь при падении будем видеть его номер
+                                    FirebaseCrashlytics.getInstance().setUserId(user.phoneNumber ?: user.uid)
                                     signedInCallback?.invoke()
                                 } else {
                                     stage = AuthStage.SetPassword
@@ -217,6 +220,8 @@ class AuthViewModel : ViewModel() {
                         uid = user.uid,
                         onResult = { hasPassword ->
                             if (hasPassword) {
+                                // Привязываем пользователя к Crashlytics
+                                FirebaseCrashlytics.getInstance().setUserId(user.phoneNumber ?: user.uid)
                                 signedInCallback?.invoke()
                             } else {
                                 stage = AuthStage.SetPassword
@@ -249,6 +254,11 @@ class AuthViewModel : ViewModel() {
             .addOnCompleteListener { task ->
                 isLoading = false
                 if (task.isSuccessful) {
+                    // Привязываем пользователя к Crashlytics
+                    val user = auth.currentUser
+                    if (user != null) {
+                        FirebaseCrashlytics.getInstance().setUserId(user.phoneNumber ?: user.uid)
+                    }
                     signedInCallback?.invoke()
                 } else {
                     errorText = task.exception?.localizedMessage ?: "Неверный пароль"

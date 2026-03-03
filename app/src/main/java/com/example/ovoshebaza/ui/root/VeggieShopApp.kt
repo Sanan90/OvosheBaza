@@ -1,5 +1,4 @@
 package com.example.ovoshebaza.ui.root
-
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
@@ -56,6 +55,7 @@ import com.example.ovoshebaza.buildSupportMap
 import com.example.ovoshebaza.sendOrderViaFirebaseTelegram
 import com.example.ovoshebaza.ui.navigation.AppNavHost
 import kotlinx.coroutines.delay
+import com.google.firebase.firestore.FirebaseFirestore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +76,8 @@ fun VeggieShopApp() {
     var showAdminPinDialog by remember { mutableStateOf(false) }
     var adminPin by remember { mutableStateOf("") }
     var adminPinError by remember { mutableStateOf<String?>(null) }
+    // Пин загруженный из Firestore (null = ещё не загружен)
+    var adminPinFromServer by remember { mutableStateOf<String?>(null) }
 
     var showSupportDialog by remember { mutableStateOf(false) }
     var supportQuestion by remember { mutableStateOf("") }
@@ -374,12 +376,36 @@ fun VeggieShopApp() {
             adminPinError = null
         },
         onConfirm = {
-            if (adminPin == "2009") {
-                showAdminPinDialog = false
-                adminPin = ""
-                navController.navigate(Screen.Admin.route)
+            val serverPin = adminPinFromServer
+            if (serverPin == null) {
+                // Пин ещё не загружен — грузим из Firestore и проверяем
+                FirebaseFirestore.getInstance()
+                    .collection("config")
+                    .document("admin")
+                    .get()
+                    .addOnSuccessListener { doc ->
+                        val pin = doc.getString("pin") ?: ""
+                        adminPinFromServer = pin // сохраняем чтобы не грузить каждый раз
+                        if (adminPin == pin) {
+                            showAdminPinDialog = false
+                            adminPin = ""
+                            navController.navigate(Screen.Admin.route)
+                        } else {
+                            adminPinError = "Неверный код"
+                        }
+                    }
+                    .addOnFailureListener {
+                        adminPinError = "Ошибка подключения, попробуй ещё раз"
+                    }
             } else {
-                adminPinError = "Неверный код"
+                // Пин уже загружен — просто сравниваем
+                if (adminPin == serverPin) {
+                    showAdminPinDialog = false
+                    adminPin = ""
+                    navController.navigate(Screen.Admin.route)
+                } else {
+                    adminPinError = "Неверный код"
+                }
             }
         }
     )

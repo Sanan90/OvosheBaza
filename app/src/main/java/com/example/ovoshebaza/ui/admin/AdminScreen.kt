@@ -68,7 +68,7 @@ import com.example.ovoshebaza.Product
 import com.example.ovoshebaza.ProductCategory
 import com.example.ovoshebaza.UnitType
 import com.example.ovoshebaza.sendBroadcastNotification
-import com.google.firebase.firestore.FirebaseFirestore
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 
 @Composable
@@ -278,7 +278,6 @@ fun ProductEditDialog(
 }
 
 enum class AdminTab { PRODUCTS, USERS }
-// 4. Админ-экран (пока пустой)
 @Composable
 fun AdminScreen(
     products: List<Product>,
@@ -291,51 +290,36 @@ fun AdminScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(AdminTab.PRODUCTS) }
-    var isLoadingUsers by remember { mutableStateOf(false) }
-    var usersError by remember { mutableStateOf<String?>(null) }
-    var users by remember { mutableStateOf<List<AdminUserSummary>>(emptyList()) }
+// Получаем ViewModel — теперь вся логика Firebase живёт там
+    // Состояния для рассылки уведомлений
     var broadcastMessage by remember { mutableStateOf("") }
     var broadcastError by remember { mutableStateOf<String?>(null) }
     var broadcastSuccess by remember { mutableStateOf<String?>(null) }
     var isBroadcastSending by remember { mutableStateOf(false) }
+
+// Какие карточки пользователей раскрыты
     val expandedUsers = remember { mutableStateMapOf<String, Boolean>() }
-    val userOrders = remember { mutableStateMapOf<String, List<AdminOrderSummary>>() }
-    val loadingOrders = remember { mutableStateMapOf<String, Boolean>() }
+
+// Отфильтрованные товары по поисковому запросу
     val filteredProducts = remember(products, searchQuery) {
-        if (searchQuery.isBlank()) {
-            products
-        } else {
-            products.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        if (searchQuery.isBlank()) products
+        else products.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+    val viewModel: AdminViewModel = viewModel()
+
+// Берём данные из ViewModel
+    val users = viewModel.users
+    val isLoadingUsers = viewModel.isLoadingUsers
+    val usersError = viewModel.usersError
+    val userOrders = viewModel.userOrders
+    val loadingOrders = viewModel.loadingOrders
+
+// Когда переключаемся на вкладку "Пользователи" — просим ViewModel загрузить данные
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == AdminTab.USERS) {
+            viewModel.loadUsers()
         }
     }
-
-    LaunchedEffect(selectedTab) {
-        if (selectedTab != AdminTab.USERS) return@LaunchedEffect
-        isLoadingUsers = true
-        usersError = null
-        FirebaseFirestore.getInstance()
-            .collection("users")
-            .get()
-            .addOnSuccessListener { snapshot ->
-                users = snapshot.documents.map { doc ->
-                    val addresses = (doc.get("addresses") as? List<*>)?.mapNotNull { it?.toString() }
-                        ?: emptyList()
-                    AdminUserSummary(
-                        uid = doc.id,
-                        name = (doc.getString("name") ?: "").trim(),
-                        phone = (doc.getString("phone") ?: "").trim(),
-                        lastAddress = (doc.getString("lastAddress") ?: "").trim(),
-                        addresses = addresses
-                    )
-                }.sortedBy { it.name.ifBlank { it.phone } }
-                isLoadingUsers = false
-            }
-            .addOnFailureListener { e ->
-                usersError = e.message ?: "Не удалось загрузить пользователей"
-                isLoadingUsers = false
-            }
-    }
-
     Scaffold(
         bottomBar = {
             Box(
@@ -370,8 +354,15 @@ fun AdminScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             FloatingActionButton(
-                                onClick = { showAddDialog = true },
-                                containerColor = Color(0xFF2ECC71),
+                                onClick = {
+                                    // Кнопка работает только на вкладке "Товары"
+                                    if (selectedTab == AdminTab.PRODUCTS) {
+                                        showAddDialog = true
+                                    }
+                                },
+                                // Когда вкладка "Пользователи" — кнопка серая
+                                containerColor = if (selectedTab == AdminTab.PRODUCTS)
+                                    Color(0xFF2ECC71) else Color.Gray,
                                 contentColor = Color.White
                             ) {
                                 Icon(
@@ -557,30 +548,9 @@ fun AdminScreen(
                                 .clickable {
                                     val next = !isExpanded
                                     expandedUsers[user.uid] = next
-                                    if (next && !userOrders.containsKey(user.uid)) {
-                                        loadingOrders[user.uid] = true
-                                        FirebaseFirestore.getInstance()
-                                            .collection("users")
-                                            .document(user.uid)
-                                            .collection("orders")
-                                            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                                            .get()
-                                            .addOnSuccessListener { snapshot ->
-                                                val orders = snapshot.documents.map { doc ->
-                                                    val items = doc.get("items") as? List<*>
-                                                    AdminOrderSummary(
-                                                        orderId = doc.id,
-                                                        createdAt = doc.getLong("createdAt") ?: 0L,
-                                                        total = doc.getDouble("total") ?: 0.0,
-                                                        itemsCount = items?.size ?: 0
-                                                    )
-                                                }
-                                                userOrders[user.uid] = orders
-                                                loadingOrders[user.uid] = false
-                                            }
-                                            .addOnFailureListener {
-                                                loadingOrders[user.uid] = false
-                                            }
+                                    if (next) {
+                                        // Просим ViewModel загрузить заказы этого пользователя
+                                        viewModel.loadOrdersForUser(user.uid)
                                     }
                                 },
                             colors = CardDefaults.cardColors(
@@ -646,7 +616,11 @@ fun AdminScreen(
                                             )
                                             orders.forEach { order ->
                                                 Text(
-                                                    text = "• #${order.orderId.takeLast(6)} · ${order.total.toInt()} ₽ · ${order.itemsCount} поз.",
+                                                    text = "• #${order.orderId.takeLast(6)} · ${order.total.toInt()} ₽ · ${order.itemsCount} поз." +
+                                                            if (order.createdAt > 0L) {
+                                                                " · " + java.text.SimpleDateFormat("dd.MM.yy HH:mm", java.util.Locale.getDefault())
+                                                                    .format(order.createdAt)
+                                                            } else "",
                                                     style = MaterialTheme.typography.bodySmall
                                                 )
                                             }

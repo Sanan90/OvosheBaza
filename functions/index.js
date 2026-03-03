@@ -1,4 +1,5 @@
 const { onCall, onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const axios = require("axios");
 const { defineSecret, defineString } = require("firebase-functions/params");

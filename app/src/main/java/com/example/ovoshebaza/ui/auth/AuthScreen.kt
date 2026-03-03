@@ -108,21 +108,6 @@ fun AuthScreen(
                     Text("Продолжить")
 
                 }
-
-                //    временный код. Удалить--------------------------------------
-
-                OutlinedButton(
-                    onClick = {
-                        if (testClickGate()) {
-                            viewModel.quickTestSignIn(activity, context)
-                        }
-                    },
-                    enabled = !viewModel.isLoading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Тестовый вход (+79999999999)")
-                }
-                //   до сюда-------------------------------------------
             }
 
 
