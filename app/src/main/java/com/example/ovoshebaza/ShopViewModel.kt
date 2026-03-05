@@ -8,43 +8,52 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-
 import com.google.firebase.firestore.DocumentSnapshot
 
-
 class ShopViewModel(application: Application) : AndroidViewModel(application) {
+
+    // SharedPreferences — локальное хранилище на телефоне
+    // Здесь храним и корзину, и кэш товаров
     private val prefs =
         application.getSharedPreferences("cart_storage", Context.MODE_PRIVATE)
-    private val cartKey = "cart_items"
 
-    // Firestore
+    private val cartKey = "cart_items"       // ключ для корзины
+    private val productsKey = "cached_products" // ключ для кэша товаров
+
+    // Firestore — наша база данных в облаке
     private val db = FirebaseFirestore.getInstance()
 
-    // Подписка на коллекцию products
+    // Подписка на коллекцию products в Firestore
     private var productsListener: ListenerRegistration? = null
 
-    // Все товары (живут в Firebase)
+    // Список товаров — сначала из кэша, потом обновится из Firestore
     var products by mutableStateOf<List<Product>>(emptyList())
         private set
 
-    // Корзина всё ещё локальная (можно потом тоже вынести)
+    // Корзина — хранится локально на телефоне
     var cartItems by mutableStateOf(listOf<CartItem>())
         private set
 
     init {
-        // при создании VM начинаем слушать Firestore
+        // 1. Сразу загружаем товары из кэша — каталог покажется мгновенно
+        loadProductsFromCache()
+
+        // 2. Подписываемся на Firestore — данные обновятся как только придут из сети
         observeProducts()
+
+        // 3. Восстанавливаем корзину из локального хранилища
         loadCartFromStorage()
     }
 
+    // Начинаем слушать изменения товаров в Firestore в реальном времени
     private fun observeProducts() {
-        // если вдруг уже была подписка — снимаем
+        // Если уже была подписка — снимаем чтобы не было дублей
         productsListener?.remove()
 
         productsListener = db.collection("products")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    // Можно добавить лог/обработку, пока просто игнорируем
+                    // При ошибке — ничего не делаем, кэш уже показан
                     return@addSnapshotListener
                 }
 
@@ -53,27 +62,84 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
                         doc.toProduct()
                     }
 
-                    // Если коллекция пустая — можно один раз залить стартовые товары
-                    if (list.isEmpty()) {
-                        seedInitialProducts()
-                    } else {
+                    if (list.isNotEmpty()) {
+                        // Обновляем список товаров на экране
                         products = list
+
+                        // Сохраняем свежие товары в кэш —
+                        // при следующем открытии покажутся мгновенно
+                        saveProductsToCache(list)
                     }
                 }
             }
     }
 
-    // Первый раз заполняем Firestore начальными товарами
-    private fun seedInitialProducts() {
-        sampleProducts.forEach { product ->
-            db.collection("products")
-                .document(product.id)
-                .set(product.toMap())
+    // Сохраняем список товаров в SharedPreferences как JSON
+    private fun saveProductsToCache(list: List<Product>) {
+        val array = org.json.JSONArray()
+        list.forEach { product ->
+            val obj = org.json.JSONObject()
+            obj.put("id", product.id)
+            obj.put("name", product.name)
+            obj.put("category", product.category.name)
+            obj.put("price", product.price)
+            obj.put("unit", product.unit.name)
+            obj.put("originCountry", product.originCountry ?: "")
+            obj.put("imageUrl", product.imageUrl ?: "")
+            obj.put("description", product.description ?: "")
+            obj.put("isPopular", product.isPopular)
+            obj.put("isNew", product.isNew)
+            obj.put("inStock", product.inStock)
+            array.put(obj)
         }
-        // После этого сработает listener и products обновится
+        prefs.edit().putString(productsKey, array.toString()).apply()
     }
 
-    // ---------- КОРЗИНА (локально) ----------
+    // Загружаем товары из кэша при старте приложения
+    // Работает мгновенно — не нужен интернет
+    private fun loadProductsFromCache() {
+        val raw = prefs.getString(productsKey, null) ?: return
+        val array = runCatching { org.json.JSONArray(raw) }.getOrNull() ?: return
+        val cached = mutableListOf<Product>()
+
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val id = obj.optString("id")
+            val name = obj.optString("name")
+            if (id.isBlank() || name.isBlank()) continue
+
+            val category = runCatching {
+                ProductCategory.valueOf(obj.optString("category"))
+            }.getOrDefault(ProductCategory.OTHER)
+
+            val unit = runCatching {
+                UnitType.valueOf(obj.optString("unit"))
+            }.getOrDefault(UnitType.KG)
+
+            cached.add(
+                Product(
+                    id = id,
+                    name = name,
+                    category = category,
+                    price = obj.optDouble("price", 0.0),
+                    unit = unit,
+                    originCountry = obj.optString("originCountry").ifBlank { null },
+                    imageUrl = obj.optString("imageUrl").ifBlank { null },
+                    description = obj.optString("description").ifBlank { null },
+                    isPopular = obj.optBoolean("isPopular", false),
+                    isNew = obj.optBoolean("isNew", false),
+                    inStock = obj.optBoolean("inStock", true)
+                )
+            )
+        }
+
+        // Показываем кэшированные товары сразу, не дожидаясь Firestore
+        if (cached.isNotEmpty()) {
+            products = cached
+        }
+    }
+
+    // ---------- КОРЗИНА (хранится локально) ----------
 
     fun addToCart(product: Product, quantity: Double) {
         if (quantity <= 0.0) return
@@ -81,8 +147,10 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
         val existing = cartItems.find { it.product.id == product.id }
 
         cartItems = if (existing == null) {
+            // Товара нет в корзине — добавляем
             cartItems + CartItem(product = product, quantity = quantity)
         } else {
+            // Товар уже есть — увеличиваем количество
             cartItems.map {
                 if (it.product.id == product.id) {
                     it.copy(quantity = it.quantity + quantity)
@@ -94,8 +162,10 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateCartItemQuantity(productId: String, newQuantity: Double) {
         cartItems = if (newQuantity <= 0.0) {
+            // Количество стало 0 — удаляем из корзины
             cartItems.filterNot { it.product.id == productId }
         } else {
+            // Обновляем количество
             cartItems.map {
                 if (it.product.id == productId) {
                     it.copy(quantity = newQuantity)
@@ -115,6 +185,7 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
         saveCartToStorage()
     }
 
+    // Сохраняем корзину в SharedPreferences как JSON
     private fun saveCartToStorage() {
         val array = org.json.JSONArray()
         cartItems.forEach { item ->
@@ -137,21 +208,26 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putString(cartKey, array.toString()).apply()
     }
 
+    // Восстанавливаем корзину при запуске приложения
     private fun loadCartFromStorage() {
         val raw = prefs.getString(cartKey, null) ?: return
         val array = runCatching { org.json.JSONArray(raw) }.getOrNull() ?: return
         val restored = mutableListOf<CartItem>()
+
         for (i in 0 until array.length()) {
             val obj = array.optJSONObject(i) ?: continue
             val id = obj.optString("id")
             val name = obj.optString("name")
             if (id.isBlank() || name.isBlank()) continue
+
             val category = runCatching {
                 ProductCategory.valueOf(obj.optString("category"))
             }.getOrDefault(ProductCategory.OTHER)
+
             val unit = runCatching {
                 UnitType.valueOf(obj.optString("unit"))
             }.getOrDefault(UnitType.KG)
+
             val product = Product(
                 id = id,
                 name = name,
@@ -170,6 +246,7 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
                 restored.add(CartItem(product = product, quantity = quantity))
             }
         }
+
         if (restored.isNotEmpty()) {
             cartItems = restored
         }
@@ -177,20 +254,21 @@ class ShopViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---------- РАБОТА С ТОВАРАМИ В FIRESTORE ----------
 
+    // Обновляем существующий товар — listener сам обновит список на экране
     fun updateProduct(updated: Product) {
         db.collection("products")
             .document(updated.id)
             .set(updated.toMap())
-        // listener сам обновит products
     }
 
+    // Добавляем новый товар — тоже обновится через listener
     fun addProduct(newProduct: Product) {
         db.collection("products")
             .document(newProduct.id)
             .set(newProduct.toMap())
-        // тоже обновится через listener
     }
 
+    // Когда ViewModel уничтожается — снимаем подписку на Firestore
     override fun onCleared() {
         super.onCleared()
         productsListener?.remove()

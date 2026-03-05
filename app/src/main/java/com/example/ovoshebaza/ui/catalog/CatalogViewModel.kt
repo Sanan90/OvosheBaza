@@ -4,14 +4,15 @@ import androidx.lifecycle.ViewModel
 import com.example.ovoshebaza.data.repository.ProductRepositoryImpl
 import com.example.ovoshebaza.domain.model.Product
 import com.example.ovoshebaza.domain.repository.ProductRepository
-import com.example.ovoshebaza.sampleProducts
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class CatalogViewModel(
     private val repository: ProductRepository = ProductRepositoryImpl()
 ) : ViewModel() {
-    private val _products = MutableStateFlow<List<Product>>(sampleProducts)
+
+    // Начинаем с пустого списка — товары придут из Firestore
+    private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products
 
     private val _isLoading = MutableStateFlow(false)

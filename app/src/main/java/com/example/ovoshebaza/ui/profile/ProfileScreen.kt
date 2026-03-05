@@ -90,6 +90,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Schedule
 
 @Composable
 fun ProfileScreen(
@@ -151,6 +154,7 @@ fun ProfileScreen(
     var expandedOrderIds by rememberSaveable(user?.uid) { mutableStateOf(setOf<String>()) }
     var showSignOutDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
     var passwordInput by remember { mutableStateOf("") }
     var passwordError by remember { mutableStateOf<String?>(null) }
     var isPasswordSaving by remember { mutableStateOf(false) }
@@ -612,6 +616,14 @@ fun ProfileScreen(
                             }
                         }
                     }
+
+                    Divider()
+                    MenuRow(
+                        icon = Icons.Default.Info,
+                        title = "О магазине",
+                        onClick = { showAboutDialog = true }
+                    )
+
                     Divider()
                     MenuRow(
                         icon = Icons.Default.VpnKey,
@@ -813,6 +825,95 @@ fun ProfileScreen(
         )
     }
 
+
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = {
+                Text(
+                    text = "О магазине",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Название
+                    Text(
+                        text = "🥦 Овощебаза Клин",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "Работаем с 2009 года",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Divider()
+
+                    // Адрес
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "г. Клин, ул. Дзержинского, 2",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    // Часы работы
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Ежедневно с 8:00 до 20:00",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    // Телефоны
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Phone,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Column {
+                            Text(
+                                text = "+7 968 700-80-70",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "+7 909 928-28-08",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Закрыть")
+                }
+            }
+        )
+    }
 
     if (isSigningOut) {
         AlertDialog(
